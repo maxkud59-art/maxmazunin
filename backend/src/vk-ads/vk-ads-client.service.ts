@@ -8,6 +8,9 @@
  *   - Сообщения: base.vk.result (VK-native цель — диалоги/сообщения)
  *   - Трюк с датой: date_from=вчера, date_to=сегодня (иначе WRONG_DATE)
  *
+ * Кеш кампаний: список кампаний запрашивается раз в 6 часов, не каждый poll.
+ * Это критично — при 7000+ кампаний список занимает ~30 запросов к API.
+ *
  * Старый кабинет (vk.com):
  *   - ads.getStatistics, поле message_sends / message_enters
  *   - Требует VK_ACCOUNT_ID
@@ -28,6 +31,7 @@ export interface StatRecord {
 const CHUNK_SIZE = 100;
 const PAGE_SIZE = 250;
 const MSK_OFFSET_MS = 3 * 60 * 60 * 1000;
+const CAMPAIGN_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 часов
 
 @Injectable()
 export class VkAdsClientService {
@@ -37,16 +41,17 @@ export class VkAdsClientService {
   private readonly token: string;
   private readonly accountId: string;
 
+  // Кеш кампаний: {id → name}, обновляется раз в 6 ч
+  private campaignCache: Record<string, string> = {};
+  private campaignCacheUpdatedAt = 0;
+
   constructor(private readonly config: ConfigService) {
     this.token = config.get<string>('VK_ACCESS_TOKEN', '');
     this.platform = config.get<string>('VK_API_PLATFORM', 'new');
     this.accountId = config.get<string>('VK_ACCOUNT_ID', '');
 
     if (this.platform === 'old') {
-      this.http = axios.create({
-        baseURL: 'https://api.vk.com/method',
-        timeout: 30_000,
-      });
+      this.http = axios.create({ baseURL: 'https://api.vk.com/method', timeout: 30_000 });
     } else {
       this.http = axios.create({
         baseURL: 'https://ads.vk.com/api/v2',
@@ -73,28 +78,27 @@ export class VkAdsClientService {
     const dateStr = mskDate.toISOString().slice(0, 10);
     const prevDate = new Date(mskDate.getTime() - 86_400_000).toISOString().slice(0, 10);
 
-    const names = await this.listCampaignsNew();
+    const names = await this.getCampaignsCached();
     const ids = Object.keys(names);
     if (ids.length === 0) {
-      this.logger.warn('No campaigns found for new VK Ads account');
+      this.logger.warn('No campaigns in cache');
       return [];
     }
 
+    this.logger.log('Fetching stats for %d campaigns (%d chunks)', ids.length, Math.ceil(ids.length / CHUNK_SIZE));
     const records: StatRecord[] = [];
 
     for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
       const chunk = ids.slice(i, i + CHUNK_SIZE);
       try {
+        const params: Record<string, string | string[]> = {
+          date_from: prevDate,
+          date_to: dateStr,
+          'id[]': chunk,
+        };
+
         const data = await this.retry(() =>
-          this.http
-            .get('/statistics/campaigns/day.json', {
-              params: [
-                ['date_from', prevDate],
-                ['date_to', dateStr],
-                ...chunk.map((id) => ['id[]', id]),
-              ].reduce((acc, [k, v]) => ({ ...acc, [k]: acc[k] ? [...(Array.isArray(acc[k]) ? acc[k] : [acc[k]]), v] : v }), {} as Record<string, string | string[]>),
-            })
-            .then((r) => r.data),
+          this.http.get('/statistics/campaigns/day.json', { params }).then((r) => r.data),
         );
 
         if (data.error) {
@@ -107,24 +111,39 @@ export class VkAdsClientService {
           for (const row of item.rows ?? []) {
             if (row.date !== dateStr) continue;
             const base = row.base ?? {};
+            const spend = parseFloat(String(base.spent ?? '0')) || 0;
+            if (spend === 0 && !base.shows) continue; // пропускаем нулевые записи
             records.push({
               campaignId: oid,
               campaignName: names[oid] ?? oid,
               impressions: Number(base.shows ?? 0),
               clicks: Number(base.clicks ?? 0),
-              spend: parseFloat(String(base.spent ?? '0')) || 0,
+              spend,
               leads: Number((base.vk ?? {}).result ?? 0),
             });
           }
         }
 
-        if (i + CHUNK_SIZE < ids.length) await this.sleep(350);
+        if (i + CHUNK_SIZE < ids.length) await this.sleep(1000);
       } catch (err: any) {
-        this.logger.error('Stats fetch failed for chunk: %s', err.message);
+        this.logger.error('Stats fetch failed for chunk %d: %s', i / CHUNK_SIZE + 1, err.message);
       }
     }
 
+    this.logger.log('Stats fetched: %d active campaigns out of %d', records.length, ids.length);
     return records;
+  }
+
+  // Кешированный список кампаний: обновляется раз в 6 часов
+  private async getCampaignsCached(): Promise<Record<string, string>> {
+    const age = Date.now() - this.campaignCacheUpdatedAt;
+    if (age < CAMPAIGN_CACHE_TTL_MS && Object.keys(this.campaignCache).length > 0) {
+      this.logger.debug('Using campaign cache (%d campaigns, age %dm)', Object.keys(this.campaignCache).length, Math.round(age / 60_000));
+      return this.campaignCache;
+    }
+    this.campaignCache = await this.listCampaignsNew();
+    this.campaignCacheUpdatedAt = Date.now();
+    return this.campaignCache;
   }
 
   private async listCampaignsNew(): Promise<Record<string, string>> {
@@ -143,10 +162,10 @@ export class VkAdsClientService {
       const total = Number(data.count ?? 0);
       offset += PAGE_SIZE;
       if (offset >= total) break;
-      await this.sleep(200);
+      await this.sleep(300);
     }
 
-    this.logger.debug('Campaigns listed: %d', Object.keys(result).length);
+    this.logger.log('Campaigns listed: %d total', Object.keys(result).length);
     return result;
   }
 
@@ -214,15 +233,18 @@ export class VkAdsClientService {
 
   // ─── Утилиты ─────────────────────────────────────────────────────────────
 
-  private async retry<T>(fn: () => Promise<T>, retries = 3, baseDelay = 2000): Promise<T> {
+  private async retry<T>(fn: () => Promise<T>, retries = 4, baseDelay = 3000): Promise<T> {
     let delay = baseDelay;
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         return await fn();
       } catch (err: any) {
         if (attempt === retries) throw err;
-        this.logger.warn('Retry %d/%d after %dms: %s', attempt + 1, retries, delay, err.message);
-        await this.sleep(delay);
+        // 429 — VK rate limit: ждём дольше чем обычно
+        const is429 = err?.response?.status === 429;
+        const waitMs = is429 ? 15_000 : delay;
+        this.logger.warn('Retry %d/%d after %dms: %s', attempt + 1, retries, waitMs, err.message);
+        await this.sleep(waitMs);
         delay *= 2;
       }
     }
