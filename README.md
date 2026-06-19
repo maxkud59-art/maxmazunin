@@ -6,16 +6,70 @@
 
 | Слой | Технологии |
 |------|------------|
-| Backend | NestJS 11, Prisma 6, PostgreSQL, Swagger/OpenAPI, JWT |
+| Backend | NestJS 11, Prisma 6, PostgreSQL, Swagger/OpenAPI, JWT, @nestjs/schedule |
 | API-контракт | `@nestjs/swagger` → `/api/docs-json` → orval → TS-клиент |
-| Frontend | Nuxt 3, Vue 3, Pinia, TailwindCSS 4, reka-ui, vee-validate+zod |
+| Frontend | Nuxt 3, Vue 3, Pinia, TailwindCSS 4, reka-ui, vee-validate+zod, chart.js + vue-chartjs |
 
 ## Роли
 
 | Роль | Доступ |
 |------|--------|
-| `ADMIN` | Все страницы + управление пользователями (`/users`) |
-| `USER` | Только защищённый рабочий стол (`/`) |
+| `ADMIN` | Все страницы + управление пользователями (`/users`) + ручной poll VK Ads |
+| `USER` | Рабочий стол (`/`) + аналитика VK Ads (`/vk-ads`) |
+
+---
+
+## Модуль VK Ads (`/vk-ads`)
+
+Почасовая аналитика рекламных кабинетов VK. Данные собираются каждые N минут
+(снимок накопленных дневных показателей), дельты вычисляются автоматически.
+
+### Алгоритм снимок → дельта
+
+1. Каждые `POLL_INTERVAL_MINUTES` минут бэкенд запрашивает статистику из VK Ads API.
+2. Накопленные за день значения сохраняются как `AdSnapshot`.
+3. Каждый час (и сразу после каждого poll) вычисляются дельты:  
+   `delta = конечный_снимок – базовый_снимок_до_начала_часа`.
+4. При полуночном сбросе (VK обнуляет счётчики в 21:00 UTC = 00:00 МСК)  
+   детектируется автоматически: `if end.spend < baseline.spend`.
+
+### Метрики
+
+| Метрика | Формула |
+|---------|---------|
+| CPL | spend / leads |
+| CPM | spend / impressions × 1000 |
+| CPC | spend / clicks |
+
+Страница `/vk-ads` показывает:
+- Таблицу и bar-chart CPL по часам МСК за выбранный день
+- Самый дешёвый час подсвечен зелёным `★`
+- Профиль часа суток (avg CPL за период) для поиска оптимального времени показа
+
+### Начальная настройка VK Ads
+
+```bash
+# 1. Добавить в /home/deploy/maxmazunin/.env на сервере:
+VK_API_PLATFORM=new
+VK_ACCESS_TOKEN=ваш_токен_из_ads.vk.com
+POLL_INTERVAL_MINUTES=5
+
+# 2. Применить новую схему БД:
+cd /home/deploy/maxmazunin/backend
+npx prisma db push
+
+# 3. Создать записи кабинетов:
+npm run seed:cabinets
+
+# 4. Активировать нужный кабинет (через psql или Prisma Studio):
+# UPDATE "VkCabinet" SET "isActive" = true WHERE "externalAccountId" = 'easybook';
+
+# 5. Перезапустить backend:
+pm2 restart maxmazunin-backend
+```
+
+> **Платформы:** `VK_API_PLATFORM=new` → новый кабинет `ads.vk.com/api/v2` (токен Bearer, без account_id).  
+> `VK_API_PLATFORM=old` → старый `vk.com API`, требует `VK_ACCOUNT_ID`.
 
 ---
 

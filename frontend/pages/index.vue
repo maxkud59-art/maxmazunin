@@ -29,7 +29,7 @@ onMounted(async () => {
 });
 
 const experiments = [
-  { label: 'Реклама VK Ads',   icon: 'Megaphone',  soon: true },
+  { label: 'Реклама VK Ads',   icon: 'Megaphone',  soon: false, href: '/vk-ads' },
   { label: 'ИИ-ассистент',     icon: 'Bot',         soon: true },
   { label: 'Авто-макет книг',  icon: 'BookImage',   soon: true },
   { label: 'Финансы',          icon: 'BarChart2',   soon: true },
@@ -82,14 +82,18 @@ const experiments = [
       </p>
 
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div
+        <NuxtLink
           v-for="item in experiments" :key="item.label"
-          class="rounded-xl border bg-card shadow p-5 opacity-50 cursor-not-allowed select-none"
+          :to="item.soon ? undefined : item.href"
+          :class="[
+            'rounded-xl border bg-card shadow p-5 block',
+            item.soon ? 'opacity-50 cursor-not-allowed select-none' : 'hover:border-primary hover:shadow-md transition-all cursor-pointer',
+          ]"
         >
-          <div class="text-2xl mb-2">🔬</div>
+          <div class="text-2xl mb-2">{{ item.soon ? '🔬' : '📊' }}</div>
           <div class="font-medium text-sm">{{ item.label }}</div>
-          <div class="text-xs text-muted-foreground mt-0.5">Скоро</div>
-        </div>
+          <div class="text-xs text-muted-foreground mt-0.5">{{ item.soon ? 'Скоро' : 'Открыть →' }}</div>
+        </NuxtLink>
       </div>
     </main>
   </div>

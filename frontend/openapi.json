@@ -84,6 +84,71 @@
         "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
         "responses": { "200": { "description": "" } }
       }
+    },
+    "/api/vk-ads/cabinets": {
+      "get": {
+        "operationId": "VkAdsController_getCabinets",
+        "summary": "Список рекламных кабинетов VK",
+        "tags": ["vk-ads"],
+        "security": [{ "bearer": [] }],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/VkCabinetDto" } } } }
+          }
+        }
+      }
+    },
+    "/api/vk-ads/hourly": {
+      "get": {
+        "operationId": "VkAdsController_getHourly",
+        "summary": "Почасовые метрики кабинета за день (МСК)",
+        "tags": ["vk-ads"],
+        "security": [{ "bearer": [] }],
+        "parameters": [
+          { "name": "cabinetId", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "date", "in": "query", "required": true, "schema": { "type": "string" }, "description": "YYYY-MM-DD по МСК" }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/HourlyStatDto" } } } }
+          }
+        }
+      }
+    },
+    "/api/vk-ads/hour-profile": {
+      "get": {
+        "operationId": "VkAdsController_getHourProfile",
+        "summary": "Средний профиль метрик по часу суток (0–23 МСК) за период",
+        "tags": ["vk-ads"],
+        "security": [{ "bearer": [] }],
+        "parameters": [
+          { "name": "cabinetId", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "from", "in": "query", "required": true, "schema": { "type": "string" }, "description": "YYYY-MM-DD (МСК, включительно)" },
+          { "name": "to", "in": "query", "required": true, "schema": { "type": "string" }, "description": "YYYY-MM-DD (МСК, включительно)" }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/HourProfileItemDto" } } } }
+          }
+        }
+      }
+    },
+    "/api/vk-ads/poll": {
+      "post": {
+        "operationId": "VkAdsController_poll",
+        "summary": "[ADMIN] Ручной запуск сбора снимка из VK API",
+        "tags": ["vk-ads"],
+        "security": [{ "bearer": [] }],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/PollResultDto" } } } }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -117,9 +182,57 @@
           "password": { "type": "string", "minLength": 6 },
           "role": { "type": "string", "enum": ["ADMIN", "USER"], "default": "USER" }
         }
+      },
+      "VkCabinetDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "externalAccountId": { "type": "string" },
+          "isActive": { "type": "boolean" }
+        }
+      },
+      "HourlyStatDto": {
+        "type": "object",
+        "properties": {
+          "hourMsk": { "type": "number", "description": "Час по МСК (0–23)" },
+          "hourStartUtc": { "type": "string", "description": "Начало часа в UTC (ISO)" },
+          "impressionsDelta": { "type": "number" },
+          "clicksDelta": { "type": "number" },
+          "spendDelta": { "type": "number", "description": "Расход ₽" },
+          "leadsDelta": { "type": "number", "description": "Лиды / сообщения" },
+          "cpm": { "type": "number", "nullable": true },
+          "cpc": { "type": "number", "nullable": true },
+          "cpl": { "type": "number", "nullable": true, "description": "Стоимость лида ₽" },
+          "isPreliminary": { "type": "boolean", "description": "Данные за последние 2 ч — предварительные" },
+          "hasData": { "type": "boolean", "description": "false — снимков за этот час нет" }
+        }
+      },
+      "HourProfileItemDto": {
+        "type": "object",
+        "properties": {
+          "hourMsk": { "type": "number", "description": "Час суток по МСК (0–23)" },
+          "totalSpend": { "type": "number", "description": "Суммарный расход ₽ за все дни периода" },
+          "totalLeads": { "type": "number" },
+          "totalImpressions": { "type": "number" },
+          "totalClicks": { "type": "number" },
+          "avgCpl": { "type": "number", "nullable": true, "description": "totalSpend / totalLeads" },
+          "avgCpm": { "type": "number", "nullable": true },
+          "avgCpc": { "type": "number", "nullable": true },
+          "daysCount": { "type": "number", "description": "Кол-во дней с данными для этого часа" }
+        }
+      },
+      "PollResultDto": {
+        "type": "object",
+        "properties": {
+          "cabinetId": { "type": "string" },
+          "snapshots": { "type": "number" },
+          "campaigns": { "type": "number" },
+          "capturedAt": { "type": "string" }
+        }
       }
     },
     "securitySchemes": { "bearer": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" } }
   },
-  "tags": [{ "name": "health" }, { "name": "auth" }, { "name": "users" }]
+  "tags": [{ "name": "health" }, { "name": "auth" }, { "name": "users" }, { "name": "vk-ads" }]
 }

@@ -46,7 +46,88 @@ export interface CreateUserDto {
   role: CreateUserDtoRole;
 }
 
+export interface VkCabinetDto {
+  id?: string;
+  title?: string;
+  externalAccountId?: string;
+  isActive?: boolean;
+}
+
+export interface HourlyStatDto {
+  /** Час по МСК (0–23) */
+  hourMsk?: number;
+  /** Начало часа в UTC (ISO) */
+  hourStartUtc?: string;
+  impressionsDelta?: number;
+  clicksDelta?: number;
+  /** Расход ₽ */
+  spendDelta?: number;
+  /** Лиды / сообщения */
+  leadsDelta?: number;
+  /** @nullable */
+  cpm?: number | null;
+  /** @nullable */
+  cpc?: number | null;
+  /**
+   * Стоимость лида ₽
+   * @nullable
+   */
+  cpl?: number | null;
+  /** Данные за последние 2 ч — предварительные */
+  isPreliminary?: boolean;
+  /** false — снимков за этот час нет */
+  hasData?: boolean;
+}
+
+export interface HourProfileItemDto {
+  /** Час суток по МСК (0–23) */
+  hourMsk?: number;
+  /** Суммарный расход ₽ за все дни периода */
+  totalSpend?: number;
+  totalLeads?: number;
+  totalImpressions?: number;
+  totalClicks?: number;
+  /**
+   * totalSpend / totalLeads
+   * @nullable
+   */
+  avgCpl?: number | null;
+  /** @nullable */
+  avgCpm?: number | null;
+  /** @nullable */
+  avgCpc?: number | null;
+  /** Кол-во дней с данными для этого часа */
+  daysCount?: number;
+}
+
+export interface PollResultDto {
+  cabinetId?: string;
+  snapshots?: number;
+  campaigns?: number;
+  capturedAt?: string;
+}
+
 export type HealthControllerCheck200 = {
   status?: string;
+};
+
+export type VkAdsControllerGetHourlyParams = {
+cabinetId: string;
+/**
+ * YYYY-MM-DD по МСК
+ */
+date: string;
+};
+
+export type VkAdsControllerGetHourProfileParams = {
+cabinetId: string;
+/**
+ * YYYY-MM-DD (МСК, включительно)
+ */
+from: string;
+/**
+ * YYYY-MM-DD (МСК, включительно)
+ */
+to: string;
 };
 

@@ -19,3 +19,52 @@ model User {
   role         Role     @default(USER)
   createdAt    DateTime @default(now())
 }
+
+// ─── VK Ads ───────────────────────────────────────────────────────────────────
+
+model VkCabinet {
+  id                String       @id @default(cuid())
+  title             String
+  externalAccountId String       @unique
+  isActive          Boolean      @default(false)
+  createdAt         DateTime     @default(now())
+  snapshots         AdSnapshot[]
+  hourlyStats       HourlyStat[]
+}
+
+// Сырые накопленные снимки от VK API (снимок = накопленное с начала дня значение)
+model AdSnapshot {
+  id            String    @id @default(cuid())
+  capturedAt    DateTime
+  cabinetId     String
+  campaignId    String
+  campaignName  String
+  impressions   Int       @default(0)
+  clicks        Int       @default(0)
+  spend         Float     @default(0)
+  leads         Int       @default(0)
+  isPreliminary Boolean   @default(true)
+  cabinet       VkCabinet @relation(fields: [cabinetId], references: [id])
+
+  @@index([cabinetId, campaignId, capturedAt])
+}
+
+// Материализованные почасовые дельты для быстрого дашборда
+model HourlyStat {
+  id               String    @id @default(cuid())
+  hourStartUtc     DateTime
+  cabinetId        String
+  campaignId       String
+  campaignName     String
+  impressionsDelta Int       @default(0)
+  clicksDelta      Int       @default(0)
+  spendDelta       Float     @default(0)
+  leadsDelta       Int       @default(0)
+  cpm              Float?
+  cpc              Float?
+  cpl              Float?
+  isPreliminary    Boolean   @default(false)
+  cabinet          VkCabinet @relation(fields: [cabinetId], references: [id])
+
+  @@unique([cabinetId, campaignId, hourStartUtc])
+}
