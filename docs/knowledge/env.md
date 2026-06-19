@@ -1,0 +1,49 @@
+# Переменные окружения
+
+Секреты только в `.env` на сервере. В репозитории — только `.env.example` и `.env.prod.example`.
+
+## Backend (`backend/.env`)
+
+| Переменная | Обязательная | Описание |
+|-----------|:---:|---------|
+| `DATABASE_URL` | да | PostgreSQL DSN: `postgresql://user:pass@host:5432/db` |
+| `JWT_SECRET` | да | Секрет подписи JWT, минимум 32 символа |
+| `JWT_EXPIRES_IN` | нет | TTL токена (default: `7d`) |
+| `PORT` | нет | Порт бэкенда (default: `3001`) |
+| `FRONTEND_URL` | нет | Для CORS (default: `http://localhost:3000`) |
+| `ADMIN_EMAIL` | да | Email первого ADMIN (для `npm run admin:create`) |
+| `ADMIN_PASSWORD` | да | Пароль первого ADMIN |
+| `MESSENGER_TEST_MODE` | нет | `true` → все ограничения мессенджера выключены (default: `true` в .env.example) |
+| `GENDIR_EMAIL` | нет | Email кому дать роль GEN_DIRECTOR при seed |
+| `VK_API_PLATFORM` | нет | `new` (ads.vk.com) или `old` (vk.com API) (default: `new`) |
+| `VK_ACCESS_TOKEN` | нет | Токен доступа VK Ads API |
+| `VK_ACCOUNT_ID` | нет | ID аккаунта VK (только для `VK_API_PLATFORM=old`) |
+| `POLL_INTERVAL_MINUTES` | нет | Интервал сбора снимков VK в минутах (default: `5`) |
+| `REDIS_ENABLED` | нет | `true` чтобы включить Redis (default: `false`) |
+| `REDIS_URL` | нет | Redis DSN (нужен только при `REDIS_ENABLED=true`) |
+
+## Prod docker-compose (`docker-compose.prod.yml`)
+
+Эти переменные читаются из `.env` в корне проекта (не `backend/.env`):
+
+| Переменная | Описание |
+|-----------|---------|
+| `DB_NAME` | Имя БД (default: `cabinet`) |
+| `DB_USER` | Пользователь PostgreSQL (default: `cabinet`) |
+| `DB_PASSWORD` | Пароль PostgreSQL — обязателен |
+| `NUXT_PUBLIC_API_BASE` | Base URL API для frontend (default: `https://maxmazunin.ru`) |
+| `LETSENCRYPT_EMAIL` | Email для certbot (нужен при первом деплое через `scripts/deploy.sh`) |
+
+## Frontend (`frontend/.env`)
+
+| Переменная | Описание |
+|-----------|---------|
+| `NUXT_PUBLIC_API_BASE` | URL бэкенда (dev: `http://localhost:3001`, prod: из docker env) |
+
+## Где живут значения
+
+| Окружение | Файл |
+|----------|------|
+| Dev (локально) | `backend/.env` + `frontend/.env` |
+| Prod | `/opt/maxmazunin-cabinet/.env` на сервере |
+| Docker prod | переменные из `/opt/maxmazunin-cabinet/.env` пробрасываются в контейнеры через `env_file: .env` |
