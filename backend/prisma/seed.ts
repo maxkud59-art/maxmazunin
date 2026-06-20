@@ -1,9 +1,10 @@
 /**
- * Создаёт первого ADMIN из переменных окружения.
+ * Создаёт первого ADMIN из переменных окружения и назначает ему GEN_DIRECTOR в мессенджере.
  * Запуск: npm run admin:create
  * Требует: ADMIN_EMAIL и ADMIN_PASSWORD в .env
+ * Опционально: GENDIR_EMAIL (если отличается от ADMIN_EMAIL)
  */
-import { PrismaClient, Role } from '@prisma/client';
+import { PrismaClient, Role, MessengerRole } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
@@ -21,17 +22,29 @@ async function main() {
   }
 
   const existing = await prisma.user.findUnique({ where: { email } });
-  if (existing) {
+  if (!existing) {
+    const passwordHash = await bcrypt.hash(password, 10);
+    await prisma.user.create({
+      data: { email, passwordHash, role: Role.ADMIN },
+    });
+    console.log(`✓ Администратор ${email} создан.`);
+  } else {
     console.log(`Администратор ${email} уже существует.`);
-    return;
   }
 
-  const passwordHash = await bcrypt.hash(password, 10);
-  await prisma.user.create({
-    data: { email, passwordHash, role: Role.ADMIN },
+  // Назначить GEN_DIRECTOR для GENDIR_EMAIL (или ADMIN_EMAIL)
+  const gendirEmail = process.env.GENDIR_EMAIL?.trim() || email;
+  const updated = await prisma.user.updateMany({
+    where: { email: gendirEmail, messengerRole: { not: MessengerRole.GEN_DIRECTOR } },
+    data: {
+      messengerRole: MessengerRole.GEN_DIRECTOR,
+      firstName: (await prisma.user.findUnique({ where: { email: gendirEmail }, select: { firstName: true } }))?.firstName ?? 'Admin',
+      lastName: (await prisma.user.findUnique({ where: { email: gendirEmail }, select: { lastName: true } }))?.lastName ?? 'User',
+    },
   });
-
-  console.log(`✓ Администратор ${email} создан.`);
+  if (updated.count > 0) {
+    console.log(`✓ ${gendirEmail} → GEN_DIRECTOR`);
+  }
 }
 
 main()

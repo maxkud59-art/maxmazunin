@@ -19,6 +19,19 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
 
+// Thrown when VK returns an auth error (expired/invalid token) — not retried.
+export class VkAuthError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'VkAuthError';
+  }
+}
+
+// VK new-platform error codes that mean "token is bad"
+const VK_AUTH_CODES = new Set(['UNAUTHORIZED', 'ACCESS_DENIED', 'FORBIDDEN', 'AUTHENTICATION_FAILED']);
+// VK old-platform error codes: 5 = invalid token, 15 = access denied
+const VK_OLD_AUTH_CODES = new Set([5, 15]);
+
 export interface StatRecord {
   campaignId: string;
   campaignName: string;
@@ -102,7 +115,22 @@ export class VkAdsClientService {
         );
 
         if (data.error) {
+          // Check if it's an auth error (new platform uses errors array or error object)
+          const errCode = String(data.error?.code ?? '').toUpperCase();
+          if (VK_AUTH_CODES.has(errCode)) {
+            throw new VkAuthError(`Токен VK недействителен или истёк (${data.error.code})`);
+          }
+          const errors: any[] = data.errors ?? (data.error ? [data.error] : []);
+          const authErr = errors.find((e: any) => VK_AUTH_CODES.has(String(e.code ?? '').toUpperCase()));
+          if (authErr) throw new VkAuthError(`Токен VK недействителен или истёк (${authErr.code})`);
           this.logger.error('VK API error: %j', data.error);
+          continue;
+        }
+        const topErrors: any[] = data.errors ?? [];
+        if (topErrors.length) {
+          const authErr = topErrors.find((e: any) => VK_AUTH_CODES.has(String(e.code ?? '').toUpperCase()));
+          if (authErr) throw new VkAuthError(`Токен VK недействителен или истёк (${authErr.code})`);
+          this.logger.error('VK API errors: %j', topErrors);
           continue;
         }
 
@@ -126,6 +154,7 @@ export class VkAdsClientService {
 
         if (i + CHUNK_SIZE < ids.length) await this.sleep(1000);
       } catch (err: any) {
+        if (err instanceof VkAuthError) throw err; // propagate auth errors
         this.logger.error('Stats fetch failed for chunk %d: %s', i / CHUNK_SIZE + 1, err.message);
       }
     }
@@ -239,6 +268,11 @@ export class VkAdsClientService {
       try {
         return await fn();
       } catch (err: any) {
+        // Auth errors — never retry, surface immediately
+        if (err instanceof VkAuthError) throw err;
+        if (err?.response?.status === 401 || err?.response?.status === 403) {
+          throw new VkAuthError(`VK вернул HTTP ${err.response.status} — токен недействителен или истёк`);
+        }
         if (attempt === retries) throw err;
         // 429 — VK rate limit: ждём дольше чем обычно
         const is429 = err?.response?.status === 429;
@@ -249,6 +283,45 @@ export class VkAdsClientService {
       }
     }
     throw new Error('retry exhausted');
+  }
+
+  /** Minimal test call to check if the current token is valid. */
+  async checkTokenHealth(): Promise<{ ok: boolean; message: string }> {
+    if (!this.token) {
+      return { ok: false, message: 'VK_ACCESS_TOKEN не задан в .env' };
+    }
+    try {
+      if (this.platform === 'old') {
+        const data = await this.http
+          .get('/ads.getCampaigns', {
+            params: { access_token: this.token, v: '5.131', account_id: this.accountId, limit: 1 },
+          })
+          .then((r) => r.data);
+        const errCode = data?.error?.error_code;
+        if (errCode && VK_OLD_AUTH_CODES.has(Number(errCode))) {
+          return { ok: false, message: `Токен VK недействителен (код ${errCode}): ${data.error.error_msg ?? ''}` };
+        }
+        if (data?.error) {
+          return { ok: false, message: `VK API ошибка: ${data.error.error_msg ?? JSON.stringify(data.error)}` };
+        }
+      } else {
+        const data = await this.http.get('/campaigns.json', { params: { limit: 1 } }).then((r) => r.data);
+        const firstErr = (data?.errors ?? [])[0];
+        if (firstErr && VK_AUTH_CODES.has(String(firstErr.code ?? '').toUpperCase())) {
+          return { ok: false, message: `Токен VK истёк или недействителен (${firstErr.code}): ${firstErr.title ?? ''}` };
+        }
+        if (firstErr) {
+          return { ok: false, message: `VK API ошибка (${firstErr.code}): ${firstErr.title ?? ''}` };
+        }
+      }
+      return { ok: true, message: 'Токен действителен' };
+    } catch (err: any) {
+      if (err instanceof VkAuthError) return { ok: false, message: err.message };
+      if (err?.response?.status === 401 || err?.response?.status === 403) {
+        return { ok: false, message: `Токен VK недействителен или истёк (HTTP ${err.response.status})` };
+      }
+      return { ok: false, message: `Ошибка подключения к VK: ${err.message}` };
+    }
   }
 
   private sleep(ms: number) {

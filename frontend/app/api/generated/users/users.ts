@@ -6,6 +6,7 @@
  */
 import type {
   CreateUserDto,
+  UpdateUserProfileDto,
   UserResponse
 } from '../maxmazuninRuPersonalCabinetAPI.schemas';
 
@@ -39,6 +40,20 @@ const usersControllerFindAll = (
       );
     }
   /**
+ * @summary [ADMIN] Обновить профиль пользователя
+ */
+const usersControllerUpdateProfile = (
+    id: string,
+    updateUserProfileDto: UpdateUserProfileDto,
+ ) => {
+      return useApiInstance<UserResponse>(
+      {url: `/api/users/${id}`, method: 'PATCH',
+      headers: {'Content-Type': 'application/json', },
+      data: updateUserProfileDto
+    },
+      );
+    }
+  /**
  * @summary [ADMIN] Удалить пользователя
  */
 const usersControllerRemove = (
@@ -49,7 +64,8 @@ const usersControllerRemove = (
     },
       );
     }
-  return {usersControllerCreate,usersControllerFindAll,usersControllerRemove}};
+  return {usersControllerCreate,usersControllerFindAll,usersControllerUpdateProfile,usersControllerRemove}};
 export type UsersControllerCreateResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getUsers>['usersControllerCreate']>>>
 export type UsersControllerFindAllResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getUsers>['usersControllerFindAll']>>>
+export type UsersControllerUpdateProfileResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getUsers>['usersControllerUpdateProfile']>>>
 export type UsersControllerRemoveResult = NonNullable<Awaited<ReturnType<ReturnType<typeof getUsers>['usersControllerRemove']>>>

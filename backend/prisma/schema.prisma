@@ -7,17 +7,188 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ─── System ───────────────────────────────────────────────────────────────────
+
 enum Role {
   ADMIN
   USER
 }
 
+// ─── Messenger ────────────────────────────────────────────────────────────────
+
+enum MessengerRole {
+  GEN_DIRECTOR
+  COMMERCIAL_DIRECTOR
+  SALES_DIRECTOR
+  ROP
+  MANAGER
+  DESIGN_DIRECTOR
+  DESIGNER
+  PRODUCTION_HEAD
+  ASSEMBLER
+  PROGRAMMER
+  ACCOUNTANT
+  OTHER
+}
+
+enum Company {
+  IZIBOOK
+  IZINEON
+}
+
+enum ChatType {
+  DIRECT
+  GROUP
+  NEWS
+}
+
+enum ChatMemberRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum MessageType {
+  TEXT
+  FILE
+  IMAGE
+  VIDEO
+  SYSTEM
+}
+
+enum AttachmentKind {
+  FILE
+  IMAGE
+  VIDEO
+  DOC
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────────
+
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
+  id           String        @id @default(cuid())
+  email        String        @unique
   passwordHash String
-  role         Role     @default(USER)
-  createdAt    DateTime @default(now())
+  role         Role          @default(USER)
+  createdAt    DateTime      @default(now())
+
+  // Messenger profile
+  firstName     String?
+  lastName      String?
+  nickname      String?       @unique
+  avatarUrl     String?
+  jobTitle      String?
+  messengerRole MessengerRole @default(OTHER)
+  companies     Company[]
+
+  // Relations
+  sentMessages      Message[]           @relation("SentMessages")
+  memberships       ChatMember[]
+  mentions          Mention[]
+  gendirGrants      GendirAccessGrant[] @relation("GrantedTo")
+  gendirGrantsGiven GendirAccessGrant[] @relation("GrantedBy")
+  bookProjects      BookProject[]
+  messageReads      MessageRead[]
+  createdChats      Chat[]
+}
+
+model Chat {
+  id          String     @id @default(cuid())
+  type        ChatType
+  title       String?
+  avatarUrl   String?
+  company     Company?   // для NEWS-каналов
+  createdById String
+  createdAt   DateTime   @default(now())
+
+  createdBy   User        @relation(fields: [createdById], references: [id])
+  members     ChatMember[]
+  messages    Message[]
+}
+
+model ChatMember {
+  id                String         @id @default(cuid())
+  chatId            String
+  userId            String
+  role              ChatMemberRole @default(MEMBER)
+  lastReadMessageId String?
+  canLeave          Boolean        @default(true)
+  muted             Boolean        @default(false)
+  joinedAt          DateTime       @default(now())
+
+  chat Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([chatId, userId])
+}
+
+model Message {
+  id          String      @id @default(cuid())
+  chatId      String
+  senderId    String
+  type        MessageType @default(TEXT)
+  body        String      @default("")
+  replyToId   String?
+  createdAt   DateTime    @default(now())
+  editedAt    DateTime?
+  deletedAt   DateTime?
+
+  chat        Chat          @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  sender      User          @relation("SentMessages", fields: [senderId], references: [id])
+  replyTo     Message?      @relation("Replies", fields: [replyToId], references: [id])
+  replies     Message[]     @relation("Replies")
+  attachments Attachment[]
+  mentions    Mention[]
+  reads       MessageRead[]
+
+  @@index([chatId, createdAt])
+}
+
+model Attachment {
+  id         String         @id @default(cuid())
+  messageId  String
+  kind       AttachmentKind
+  storageKey String
+  fileName   String
+  mime       String
+  sizeBytes  Int
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+}
+
+model Mention {
+  id        String @id @default(cuid())
+  messageId String
+  userId    String
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId])
+}
+
+model GendirAccessGrant {
+  id        String   @id @default(cuid())
+  userId    String
+  grantedBy String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  user      User @relation("GrantedTo", fields: [userId], references: [id], onDelete: Cascade)
+  grantor   User @relation("GrantedBy", fields: [grantedBy], references: [id])
+
+  @@unique([userId])
+}
+
+model MessageRead {
+  messageId String
+  userId    String
+  readAt    DateTime @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([messageId, userId])
 }
 
 // ─── VK Ads ───────────────────────────────────────────────────────────────────
@@ -32,7 +203,6 @@ model VkCabinet {
   hourlyStats       HourlyStat[]
 }
 
-// Сырые накопленные снимки от VK API (снимок = накопленное с начала дня значение)
 model AdSnapshot {
   id            String    @id @default(cuid())
   capturedAt    DateTime
@@ -49,7 +219,6 @@ model AdSnapshot {
   @@index([cabinetId, campaignId, capturedAt])
 }
 
-// Материализованные почасовые дельты для быстрого дашборда
 model HourlyStat {
   id               String    @id @default(cuid())
   hourStartUtc     DateTime
@@ -67,4 +236,299 @@ model HourlyStat {
   cabinet          VkCabinet @relation(fields: [cabinetId], references: [id])
 
   @@unique([cabinetId, campaignId, hourStartUtc])
+}
+
+// ─── Book Layout ──────────────────────────────────────────────────────────────
+
+enum BookSize {
+  S20x20
+  S20x30
+  S25x25
+  S30x30
+}
+
+enum SpreadKind {
+  COVER
+  SPREAD
+}
+
+model BookProject {
+  id          String    @id @default(cuid())
+  orderNumber String?   @unique
+  title       String
+  size        BookSize  @default(S20x20)
+  shareToken  String    @unique @default(cuid())
+  createdById String
+  createdBy   User      @relation(fields: [createdById], references: [id])
+  photos      BookPhoto[]
+  spreads     BookSpread[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model BookPhoto {
+  id               String       @id @default(cuid())
+  bookProjectId    String
+  bookProject      BookProject  @relation(fields: [bookProjectId], references: [id], onDelete: Cascade)
+  storageKey       String
+  thumbKey         String
+  fileName         String
+  width            Int          @default(0)
+  height           Int          @default(0)
+  takenAt          DateTime?
+  order            Int          @default(0)
+  uploadedAt       DateTime     @default(now())
+  enhancedKey      String?
+  enhancedThumbKey String?
+  useEnhanced      Boolean      @default(false)
+  placements       BookPlacement[]
+}
+
+model BookSpread {
+  id            String          @id @default(cuid())
+  bookProjectId String
+  bookProject   BookProject     @relation(fields: [bookProjectId], references: [id], onDelete: Cascade)
+  index         Int
+  kind          SpreadKind      @default(SPREAD)
+  templateId    String?
+  placements    BookPlacement[]
+  textElements  BookTextElement[]
+}
+
+model BookPlacement {
+  id        String     @id @default(cuid())
+  spreadId  String
+  spread    BookSpread @relation(fields: [spreadId], references: [id], onDelete: Cascade)
+  photoId   String
+  photo     BookPhoto  @relation(fields: [photoId], references: [id], onDelete: Cascade)
+  cellIndex Int        @default(0)
+  rotation  Float      @default(0)
+  scale     Float      @default(1)
+  panX      Float      @default(50)
+  panY      Float      @default(50)
+  z         Int        @default(0)
+}
+
+model BookTextElement {
+  id         String     @id @default(cuid())
+  spreadId   String
+  spread     BookSpread @relation(fields: [spreadId], references: [id], onDelete: Cascade)
+  text       String
+  fontFamily String     @default("Inter")
+  fontSize   Int        @default(16)
+  color      String     @default("#000000")
+  x          Float      @default(0)
+  y          Float      @default(0)
+  w          Float      @default(200)
+  h          Float      @default(40)
+}
+
+// ─── VK Messenger (ИИ-ассистент) ──────────────────────────────────────────────
+
+enum VkDirection {
+  IN
+  OUT
+}
+
+model VkConversation {
+  id              String    @id @default(cuid())
+  peerId          Int       @unique
+  peerType        String    @default("user")
+  clientName      String    @default("")
+  clientAvatar    String?
+  lastMessageText String    @default("")
+  lastMessageAt   DateTime  @default(now())
+  unreadCount     Int       @default(0)
+  crmStatus       String?
+  updatedAt       DateTime  @updatedAt
+
+  messages  VkMessage[]
+  client    VkClient?
+
+  @@index([lastMessageAt])
+}
+
+model VkMessage {
+  id             String         @id @default(cuid())
+  conversationId String
+  vkMessageId    Int
+  direction      VkDirection
+  text           String         @default("")
+  attachments    Json           @default("[]")
+  senderName     String         @default("")
+  createdAt      DateTime
+
+  conversation   VkConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, vkMessageId])
+  @@index([conversationId, createdAt])
+}
+
+model VkClient {
+  id             String         @id @default(cuid())
+  peerId         Int            @unique
+  fio            String?
+  firstName      String?
+  lastName       String?
+  vkUrl          String?
+  avatar         String?
+  phone          String?
+  city           String?
+  source         String?
+  note           String?
+  tags           Json           @default("[]")
+  firstContactAt DateTime?
+  crmStatusId    String?
+
+  conversation   VkConversation @relation(fields: [peerId], references: [peerId])
+  crmStatus      CrmStatus?     @relation(fields: [crmStatusId], references: [id])
+  tagLinks       ClientTag[]
+  orders         Order[]
+
+  @@index([firstContactAt])
+}
+
+// ─── ИИ-ассистент: Справочники ────────────────────────────────────────────────
+
+model CrmStatus {
+  id       String      @id @default(cuid())
+  name     String
+  color    String      @default("#6366f1")
+  order    Int         @default(0)
+  archived Boolean     @default(false)
+  clients  VkClient[]
+}
+
+model Tag {
+  id       String      @id @default(cuid())
+  name     String
+  color    String      @default("#10b981")
+  archived Boolean     @default(false)
+  clients  ClientTag[]
+}
+
+model ClientTag {
+  clientId String
+  tagId    String
+  client   VkClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  tag      Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([clientId, tagId])
+}
+
+model OrderStatus {
+  id       String   @id @default(cuid())
+  name     String
+  color    String   @default("#f59e0b")
+  order    Int      @default(0)
+  archived Boolean  @default(false)
+  orders   Order[]
+}
+
+// ─── ИИ-ассистент: Заказы ─────────────────────────────────────────────────────
+
+model Order {
+  id            String       @id @default(cuid())
+  number        Int          @default(autoincrement())
+  clientId      String
+  client        VkClient     @relation(fields: [clientId], references: [id])
+  orderStatusId String?
+  orderStatus   OrderStatus? @relation(fields: [orderStatusId], references: [id])
+  amount        Float?
+  items         String?
+  comment       String?
+  createdAt     DateTime     @default(now())
+  archived      Boolean      @default(false)
+
+  @@index([clientId])
+  @@index([createdAt])
+}
+
+// ─── ИИ-ассистент: Быстрые фразы ─────────────────────────────────────────────
+
+model PhraseCategory {
+  id       String       @id @default(cuid())
+  name     String
+  order    Int          @default(0)
+  archived Boolean      @default(false)
+  phrases  QuickPhrase[]
+}
+
+model QuickPhrase {
+  id         String         @id @default(cuid())
+  categoryId String
+  category   PhraseCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  title      String
+  text       String
+  order      Int            @default(0)
+  archived   Boolean        @default(false)
+}
+
+// ─── ИИ-ассистент: Рассылки ───────────────────────────────────────────────────
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  DONE
+  PAUSED
+  FAILED
+}
+
+enum RecipientStatus {
+  PENDING
+  SENT
+  ERROR
+  SKIPPED
+}
+
+model Campaign {
+  id            String         @id @default(cuid())
+  name          String
+  channel       String         @default("VK")
+  messageText   String
+  attachments   Json           @default("[]")
+  segmentFilter Json           @default("{}")
+  status        CampaignStatus @default(DRAFT)
+  scheduledAt   DateTime?
+  createdAt     DateTime       @default(now())
+  totalCount    Int            @default(0)
+  sentCount     Int            @default(0)
+  errorCount    Int            @default(0)
+  recipients    CampaignRecipient[]
+}
+
+model CampaignRecipient {
+  id         String          @id @default(cuid())
+  campaignId String
+  campaign   Campaign        @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  peerId     Int
+  clientName String          @default("")
+  status     RecipientStatus @default(PENDING)
+  sentAt     DateTime?
+  error      String?
+
+  @@index([campaignId, status])
+}
+
+// ─── ИИ-ассистент: Настройки ИИ ──────────────────────────────────────────────
+
+model AiSettings {
+  id           String   @id @default("default")
+  systemPrompt String   @default("")
+  provider     String   @default("openai")
+  model        String   @default("claude-haiku-4-5-20251001")
+  temperature  Float    @default(0.7)
+  draftMode    Boolean  @default(true)
+  updatedAt    DateTime @updatedAt
+}
+
+model AiKnowledgeEntry {
+  id        String   @id @default(cuid())
+  category  String   @default("general")
+  title     String
+  content   String
+  enabled   Boolean  @default(true)
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
 }

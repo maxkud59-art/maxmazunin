@@ -76,6 +76,15 @@
       }
     },
     "/api/users/{id}": {
+      "patch": {
+        "operationId": "UsersController_updateProfile",
+        "summary": "[ADMIN] Обновить профиль пользователя",
+        "tags": ["users"],
+        "security": [{ "bearer": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateUserProfileDto" } } } },
+        "responses": { "200": { "description": "", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UserResponse" } } } } }
+      },
       "delete": {
         "operationId": "UsersController_remove",
         "summary": "[ADMIN] Удалить пользователя",
@@ -136,6 +145,47 @@
         }
       }
     },
+    "/api/messenger/profile": {
+      "get": { "operationId": "MessengerController_getProfile", "summary": "Получить профиль мессенджера", "tags": ["messenger"], "security": [{ "bearer": [] }], "responses": { "200": { "description": "", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UserProfileDto" } } } } } },
+      "patch": { "operationId": "MessengerController_updateProfile", "summary": "Обновить профиль", "tags": ["messenger"], "security": [{ "bearer": [] }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateProfileDto" } } } }, "responses": { "200": { "description": "", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UserProfileDto" } } } } } }
+    },
+    "/api/messenger/users": {
+      "get": { "operationId": "MessengerController_searchUsers", "summary": "Поиск пользователей", "tags": ["messenger"], "security": [{ "bearer": [] }], "parameters": [{ "name": "q", "in": "query", "required": false, "schema": { "type": "string" } }], "responses": { "200": { "description": "", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/UserProfileDto" } } } } } } }
+    },
+    "/api/messenger/users/{id}/role": {
+      "patch": { "operationId": "MessengerController_setRole", "summary": "[Руководитель] Назначить должность", "tags": ["messenger"], "security": [{ "bearer": [] }], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SetUserRoleDto" } } } }, "responses": { "200": { "description": "", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UserProfileDto" } } } } } }
+    },
+    "/api/messenger/chats": {
+      "get": { "operationId": "MessengerController_getChats", "summary": "Список чатов", "tags": ["messenger"], "security": [{ "bearer": [] }], "responses": { "200": { "description": "", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/ChatDto" } } } } } } },
+      "post": { "operationId": "MessengerController_createGroup", "summary": "[Руководитель] Создать группу", "tags": ["messenger"], "security": [{ "bearer": [] }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateGroupChatDto" } } } }, "responses": { "201": { "description": "" } } }
+    },
+    "/api/messenger/direct/{userId}": {
+      "post": { "operationId": "MessengerController_openDirect", "summary": "Открыть личный чат", "tags": ["messenger"], "security": [{ "bearer": [] }], "parameters": [{ "name": "userId", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "201": { "description": "", "content": { "application/json": { "schema": { "type": "object", "properties": { "chatId": { "type": "string" } } } } } } }
+    }},
+    "/api/messenger/chats/{id}/messages": {
+      "get": { "operationId": "MessengerController_getMessages", "summary": "Сообщения чата", "tags": ["messenger"], "security": [{ "bearer": [] }], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }, { "name": "cursor", "in": "query", "required": false, "schema": { "type": "string" } }], "responses": { "200": { "description": "", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MessagesPageDto" } } } } } },
+      "post": { "operationId": "MessengerController_sendMessage", "summary": "Отправить сообщение", "tags": ["messenger"], "security": [{ "bearer": [] }], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SendMessageDto" } } } }, "responses": { "201": { "description": "", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MessageDto" } } } } } }
+    },
+    "/api/messenger/messages/{id}": {
+      "patch": { "operationId": "MessengerController_editMessage", "summary": "Редактировать сообщение", "tags": ["messenger"], "security": [{ "bearer": [] }], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EditMessageDto" } } } }, "responses": { "200": { "description": "" } } },
+      "delete": { "operationId": "MessengerController_deleteMessage", "summary": "Удалить сообщение", "tags": ["messenger"], "security": [{ "bearer": [] }], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "" } } }
+    },
+    "/api/messenger/chats/{id}/read": {
+      "post": { "operationId": "MessengerController_markRead", "summary": "Отметить прочитанными", "tags": ["messenger"], "security": [{ "bearer": [] }], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "lastMessageId": { "type": "string" } } } } } }, "responses": { "200": { "description": "" } } }
+    },
+    "/api/messenger/gendir-grants": {
+      "get": { "operationId": "MessengerController_listGrants", "summary": "Список грантов Гендира", "tags": ["messenger"], "security": [{ "bearer": [] }], "responses": { "200": { "description": "", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/GrantDto" } } } } } } },
+      "post": { "operationId": "MessengerController_createGrant", "summary": "[КомДир] Выдать грант", "tags": ["messenger"], "security": [{ "bearer": [] }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateGrantDto" } } } }, "responses": { "201": { "description": "" } } }
+    },
+    "/api/messenger/gendir-grants/{id}": {
+      "delete": { "operationId": "MessengerController_revokeGrant", "summary": "[КомДир] Отозвать грант", "tags": ["messenger"], "security": [{ "bearer": [] }], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "" } } }
+    },
+    "/api/messenger/upload": {
+      "post": { "operationId": "UploadController_uploadFile", "summary": "Загрузить файл (≤20 МБ)", "tags": ["messenger"], "security": [{ "bearer": [] }], "requestBody": { "required": true, "content": { "multipart/form-data": { "schema": { "type": "object", "properties": { "file": { "type": "string", "format": "binary" } } } } } }, "responses": { "201": { "description": "", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UploadResultDto" } } } } } }
+    },
+    "/api/messenger/online": {
+      "get": { "operationId": "MessengerController_getOnline", "summary": "Список онлайн userId", "tags": ["messenger"], "security": [{ "bearer": [] }], "responses": { "200": { "description": "", "content": { "application/json": { "schema": { "type": "array", "items": { "type": "string" } } } } } } }
+    },
     "/api/vk-ads/poll": {
       "post": {
         "operationId": "VkAdsController_poll",
@@ -171,7 +221,23 @@
           "id": { "type": "string" },
           "email": { "type": "string" },
           "role": { "type": "string", "enum": ["ADMIN", "USER"] },
-          "createdAt": { "type": "string", "format": "date-time" }
+          "createdAt": { "type": "string", "format": "date-time" },
+          "firstName": { "type": "string", "nullable": true },
+          "lastName": { "type": "string", "nullable": true },
+          "nickname": { "type": "string", "nullable": true },
+          "messengerRole": { "$ref": "#/components/schemas/MessengerRole" },
+          "companies": { "type": "array", "items": { "$ref": "#/components/schemas/Company" } },
+          "jobTitle": { "type": "string", "nullable": true },
+          "avatarUrl": { "type": "string", "nullable": true }
+        }
+      },
+      "UpdateUserProfileDto": {
+        "type": "object",
+        "properties": {
+          "firstName": { "type": "string" }, "lastName": { "type": "string" },
+          "nickname": { "type": "string" }, "messengerRole": { "$ref": "#/components/schemas/MessengerRole" },
+          "companies": { "type": "array", "items": { "$ref": "#/components/schemas/Company" } },
+          "jobTitle": { "type": "string" }, "avatarUrl": { "type": "string" }
         }
       },
       "CreateUserDto": {
@@ -222,6 +288,91 @@
           "daysCount": { "type": "number", "description": "Кол-во дней с данными для этого часа" }
         }
       },
+      "MessengerRole": { "type": "string", "enum": ["GEN_DIRECTOR","COMMERCIAL_DIRECTOR","SALES_DIRECTOR","ROP","MANAGER","DESIGN_DIRECTOR","DESIGNER","PRODUCTION_HEAD","ASSEMBLER","PROGRAMMER","ACCOUNTANT","OTHER"] },
+      "Company": { "type": "string", "enum": ["IZIBOOK","IZINEON"] },
+      "UserProfileDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" }, "email": { "type": "string" }, "firstName": { "type": "string", "nullable": true }, "lastName": { "type": "string", "nullable": true },
+          "nickname": { "type": "string", "nullable": true }, "avatarUrl": { "type": "string", "nullable": true }, "jobTitle": { "type": "string", "nullable": true },
+          "messengerRole": { "$ref": "#/components/schemas/MessengerRole" }, "companies": { "type": "array", "items": { "$ref": "#/components/schemas/Company" } },
+          "isComplete": { "type": "boolean" }
+        }
+      },
+      "UpdateProfileDto": {
+        "type": "object",
+        "properties": { "firstName": { "type": "string" }, "lastName": { "type": "string" }, "nickname": { "type": "string" }, "avatarUrl": { "type": "string" }, "jobTitle": { "type": "string" } }
+      },
+      "SetUserRoleDto": {
+        "type": "object",
+        "required": ["messengerRole"],
+        "properties": { "messengerRole": { "$ref": "#/components/schemas/MessengerRole" }, "jobTitle": { "type": "string" }, "companies": { "type": "array", "items": { "$ref": "#/components/schemas/Company" } } }
+      },
+      "ChatMemberDto": {
+        "type": "object",
+        "properties": { "userId": { "type": "string" }, "firstName": { "type": "string", "nullable": true }, "lastName": { "type": "string", "nullable": true }, "nickname": { "type": "string", "nullable": true }, "avatarUrl": { "type": "string", "nullable": true }, "jobTitle": { "type": "string", "nullable": true }, "role": { "type": "string" }, "muted": { "type": "boolean" } }
+      },
+      "LastMessageDto": {
+        "type": "object",
+        "properties": { "id": { "type": "string" }, "body": { "type": "string", "nullable": true }, "senderName": { "type": "string", "nullable": true }, "createdAt": { "type": "string" } }
+      },
+      "ChatDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" }, "type": { "type": "string", "enum": ["DIRECT","GROUP","NEWS"] }, "title": { "type": "string", "nullable": true },
+          "avatarUrl": { "type": "string", "nullable": true }, "company": { "type": "string", "nullable": true }, "lastMessage": { "$ref": "#/components/schemas/LastMessageDto" },
+          "unreadCount": { "type": "number" }, "updatedAt": { "type": "string" }, "members": { "type": "array", "items": { "$ref": "#/components/schemas/ChatMemberDto" } }
+        }
+      },
+      "CreateGroupChatDto": {
+        "type": "object",
+        "required": ["title","memberIds"],
+        "properties": { "title": { "type": "string" }, "avatarUrl": { "type": "string" }, "memberIds": { "type": "array", "items": { "type": "string" } } }
+      },
+      "SenderDto": {
+        "type": "object",
+        "properties": { "id": { "type": "string" }, "firstName": { "type": "string", "nullable": true }, "lastName": { "type": "string", "nullable": true }, "nickname": { "type": "string", "nullable": true }, "avatarUrl": { "type": "string", "nullable": true } }
+      },
+      "AttachmentDto": {
+        "type": "object",
+        "properties": { "id": { "type": "string" }, "kind": { "type": "string" }, "storageKey": { "type": "string" }, "fileName": { "type": "string" }, "mime": { "type": "string" }, "sizeBytes": { "type": "number" }, "url": { "type": "string" } }
+      },
+      "MessageDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" }, "chatId": { "type": "string" }, "type": { "type": "string" }, "body": { "type": "string" },
+          "sender": { "$ref": "#/components/schemas/SenderDto" }, "replyTo": { "nullable": true },
+          "attachments": { "type": "array", "items": { "$ref": "#/components/schemas/AttachmentDto" } },
+          "mentions": { "type": "array", "items": { "type": "string" } },
+          "createdAt": { "type": "string" }, "editedAt": { "type": "string", "nullable": true }, "deletedAt": { "type": "string", "nullable": true }, "isMine": { "type": "boolean" }
+        }
+      },
+      "MessagesPageDto": {
+        "type": "object",
+        "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/MessageDto" } }, "hasMore": { "type": "boolean" }, "nextCursor": { "type": "string", "nullable": true } }
+      },
+      "SendMessageDto": {
+        "type": "object",
+        "properties": { "body": { "type": "string" }, "replyToId": { "type": "string" }, "attachmentKeys": { "type": "array", "items": { "type": "string" } } }
+      },
+      "EditMessageDto": {
+        "type": "object",
+        "required": ["body"],
+        "properties": { "body": { "type": "string" } }
+      },
+      "UploadResultDto": {
+        "type": "object",
+        "properties": { "storageKey": { "type": "string" }, "fileName": { "type": "string" }, "mime": { "type": "string" }, "sizeBytes": { "type": "number" }, "kind": { "type": "string" }, "url": { "type": "string" } }
+      },
+      "CreateGrantDto": {
+        "type": "object",
+        "required": ["userId"],
+        "properties": { "userId": { "type": "string" } }
+      },
+      "GrantDto": {
+        "type": "object",
+        "properties": { "id": { "type": "string" }, "userId": { "type": "string" }, "userNickname": { "type": "string", "nullable": true }, "userName": { "type": "string", "nullable": true }, "grantedBy": { "type": "string" }, "active": { "type": "boolean" }, "createdAt": { "type": "string" } }
+      },
       "PollResultDto": {
         "type": "object",
         "properties": {
@@ -234,5 +385,5 @@
     },
     "securitySchemes": { "bearer": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" } }
   },
-  "tags": [{ "name": "health" }, { "name": "auth" }, { "name": "users" }, { "name": "vk-ads" }]
+  "tags": [{ "name": "health" }, { "name": "auth" }, { "name": "users" }, { "name": "vk-ads" }, { "name": "messenger" }]
 }

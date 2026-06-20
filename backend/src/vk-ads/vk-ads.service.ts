@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { VkAdsClientService } from './vk-ads-client.service';
+import { VkAdsClientService, VkAuthError } from './vk-ads-client.service';
 import { VkCabinetDto } from './dto/cabinet.dto';
 import { HourlyStatDto } from './dto/hourly.dto';
 import { HourProfileItemDto } from './dto/hour-profile.dto';
@@ -58,11 +58,19 @@ export class VkAdsService {
 
         results.push({ cabinetId: cabinet.id, snapshots: records.length, campaigns: records.length, capturedAt: capturedAt.toISOString() });
       } catch (err: any) {
-        this.logger.error(`Poll "${cabinet.title}" failed: ${err.message}`);
+        if (err instanceof VkAuthError) {
+          this.logger.error(`Poll "${cabinet.title}" ТОКЕН НЕДЕЙСТВИТЕЛЕН: ${err.message}`);
+        } else {
+          this.logger.error(`Poll "${cabinet.title}" failed: ${err.message}`);
+        }
       }
     }
 
     return results;
+  }
+
+  async checkTokenHealth(): Promise<{ ok: boolean; message: string }> {
+    return this.vkClient.checkTokenHealth();
   }
 
   // ─── Роллап HourlyStat ────────────────────────────────────────────────────

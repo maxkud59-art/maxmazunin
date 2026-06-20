@@ -9,7 +9,6 @@ const auth = useAuthStore();
 const backendStatus = ref<'loading' | 'ok' | 'error'>('loading');
 
 onMounted(async () => {
-  // 1. Health check
   try {
     const { healthControllerCheck } = getHealth();
     const res = await healthControllerCheck();
@@ -18,81 +17,78 @@ onMounted(async () => {
     backendStatus.value = 'error';
   }
 
-  // 2. Загрузить профиль если ещё нет
   if (!auth.user && auth.token) {
     try {
       const { authControllerMe } = getAuth();
       const me = await authControllerMe();
       auth.setUser({ id: me.id!, email: me.email!, role: me.role as 'ADMIN' | 'USER' });
-    } catch { /* токен протух */ auth.logout(); navigateTo('/login'); }
+    } catch { auth.logout(); navigateTo('/login'); }
   }
 });
 
 const experiments = [
-  { label: 'Реклама VK Ads',   icon: 'Megaphone',  soon: false, href: '/vk-ads' },
-  { label: 'ИИ-ассистент',     icon: 'Bot',         soon: true },
-  { label: 'Авто-макет книг',  icon: 'BookImage',   soon: true },
-  { label: 'Финансы',          icon: 'BarChart2',   soon: true },
+  { label: 'Реклама VK Ads',   icon: '📊',  soon: false, href: '/vk-ads' },
+  { label: 'Мессенджер',       icon: '💬',  soon: false, href: '/messenger' },
+  { label: 'ИИ-ассистент',     icon: '🤖',  soon: false, href: '/assistant' },
+  { label: 'Авто-макет книг',  icon: '📖',  soon: false, href: '/book-layout' },
+  { label: 'Финансы',          icon: '📈',  soon: true },
 ];
 </script>
 
 <template>
-  <div class="min-h-screen bg-background">
-    <!-- Header -->
-    <header class="border-b px-6 py-4 flex items-center justify-between">
-      <div class="flex items-center gap-3">
-        <span class="font-bold text-lg tracking-tight">maxmazunin.ru</span>
-        <span class="text-xs bg-secondary text-secondary-foreground px-2 py-0.5 rounded">кабинет</span>
-      </div>
-      <div class="flex items-center gap-4">
-        <!-- Backend status -->
+  <div class="min-h-screen bg-background overflow-x-hidden">
+    <!-- Header — adaptive, no overflow on 360px -->
+    <header class="border-b px-4 py-3">
+      <div class="flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2 min-w-0">
+          <span class="font-bold text-base tracking-tight shrink-0">maxmazunin.ru</span>
+          <span class="text-xs bg-secondary text-secondary-foreground px-2 py-0.5 rounded shrink-0">кабинет</span>
+        </div>
+        <!-- Backend status (hidden on very small screens) -->
         <span
-          class="text-xs px-2.5 py-1 rounded-full font-medium"
+          class="hidden sm:inline text-xs px-2 py-0.5 rounded-full font-medium shrink-0"
           :class="{
             'bg-green-100 text-green-700': backendStatus === 'ok',
             'bg-red-100 text-red-700': backendStatus === 'error',
             'bg-muted text-muted-foreground animate-pulse': backendStatus === 'loading',
           }"
         >
-          <span v-if="backendStatus === 'loading'">бэкенд: …</span>
-          <span v-else-if="backendStatus === 'ok'">бэкенд: ok ✓</span>
-          <span v-else>бэкенд: ✗</span>
+          <span v-if="backendStatus === 'loading'">…</span>
+          <span v-else-if="backendStatus === 'ok'">ok ✓</span>
+          <span v-else>✗</span>
         </span>
+      </div>
 
-        <!-- User -->
-        <span class="text-sm text-muted-foreground">{{ auth.user?.email }}</span>
-        <span
-          v-if="auth.isAdmin"
-          class="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded font-medium"
-        >ADMIN</span>
-        <NuxtLink v-if="auth.isAdmin" to="/users" class="text-sm text-primary hover:underline">
-          Пользователи
-        </NuxtLink>
-        <button class="text-sm text-destructive hover:underline" @click="auth.logout(); navigateTo('/login')">
-          Выйти
-        </button>
+      <!-- Second row for email + actions (always visible) -->
+      <div class="flex items-center justify-between mt-1.5 gap-2">
+        <span class="text-xs text-muted-foreground truncate min-w-0">{{ auth.user?.email }}</span>
+        <div class="flex items-center gap-2 shrink-0">
+          <span v-if="auth.isAdmin" class="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded font-medium">ADMIN</span>
+          <NuxtLink v-if="auth.isAdmin" to="/users" class="text-xs text-primary hover:underline">Пользователи</NuxtLink>
+          <button class="text-xs text-destructive hover:underline" @click="auth.logout(); navigateTo('/login')">Выйти</button>
+        </div>
       </div>
     </header>
 
     <!-- Main -->
-    <main class="max-w-4xl mx-auto px-6 py-12">
-      <h1 class="text-3xl font-bold mb-1">Рабочий стол</h1>
-      <p class="text-muted-foreground mb-10 text-sm">
-        Привет, {{ auth.user?.email ?? '…' }}. Здесь будут эксперименты.
+    <main class="max-w-4xl mx-auto px-4 py-8">
+      <h1 class="text-2xl font-bold mb-1">Рабочий стол</h1>
+      <p class="text-muted-foreground mb-8 text-sm">
+        Привет, {{ auth.user?.email ?? '…' }}.
       </p>
 
-      <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
         <NuxtLink
           v-for="item in experiments" :key="item.label"
           :to="item.soon ? undefined : item.href"
           :class="[
-            'rounded-xl border bg-card shadow p-5 block',
+            'rounded-xl border bg-card shadow p-4 block',
             item.soon ? 'opacity-50 cursor-not-allowed select-none' : 'hover:border-primary hover:shadow-md transition-all cursor-pointer',
           ]"
         >
-          <div class="text-2xl mb-2">{{ item.soon ? '🔬' : '📊' }}</div>
-          <div class="font-medium text-sm">{{ item.label }}</div>
-          <div class="text-xs text-muted-foreground mt-0.5">{{ item.soon ? 'Скоро' : 'Открыть →' }}</div>
+          <div class="text-2xl mb-2">{{ item.soon ? '🔬' : item.icon }}</div>
+          <div class="font-medium text-sm leading-tight">{{ item.label }}</div>
+          <div class="text-xs text-muted-foreground mt-1">{{ item.soon ? 'Скоро' : 'Открыть →' }}</div>
         </NuxtLink>
       </div>
     </main>

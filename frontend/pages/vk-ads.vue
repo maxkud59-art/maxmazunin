@@ -42,9 +42,37 @@ const profileLoading = ref(false);
 const polling = ref(false);
 const pollMsg = ref('');
 
+// ─── VK Token health ──────────────────────────────────────────────────────────
+
+const tokenError = ref('');   // non-empty = show error banner
+const tokenChecking = ref(false);
+const tokenOk = ref<boolean | null>(null);  // null = not checked yet
+
+async function checkTokenHealth() {
+  tokenChecking.value = true;
+  tokenError.value = '';
+  tokenOk.value = null;
+  try {
+    const apiBase = useRuntimeConfig().public.apiBase as string ?? '';
+    const token = process.client ? (localStorage.getItem('auth_token') ?? '') : '';
+    const res = await $fetch<{ ok: boolean; message: string }>(`${apiBase}/api/vk-ads/token-health`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    tokenOk.value = res.ok;
+    if (!res.ok) tokenError.value = res.message;
+  } catch (e: any) {
+    tokenOk.value = false;
+    tokenError.value = e?.data?.message ?? e?.message ?? 'Не удалось проверить токен';
+  } finally {
+    tokenChecking.value = false;
+  }
+}
+
 // ─── Загрузка данных ──────────────────────────────────────────────────────────
 
 onMounted(async () => {
+  // Check token health first — gives immediate feedback if expired
+  await checkTokenHealth();
   try {
     cabinets.value = await vkAdsControllerGetCabinets();
     const active = cabinets.value.find((c) => c.isActive) ?? cabinets.value[0];
@@ -162,6 +190,40 @@ const chartOptions = {
 
     <main class="max-w-5xl mx-auto px-6 py-8 space-y-10">
 
+      <!-- VK Token error banner -->
+      <div
+        v-if="tokenOk === false"
+        class="flex items-start gap-3 bg-destructive/10 border border-destructive/30 text-destructive rounded-xl px-4 py-3"
+      >
+        <span class="text-lg leading-none mt-0.5">⚠️</span>
+        <div class="flex-1 min-w-0">
+          <p class="font-semibold text-sm">VK-токен недействителен или истёк</p>
+          <p class="text-xs mt-0.5 opacity-80">{{ tokenError || 'Токен VK недействителен или истёк' }}</p>
+          <p class="text-xs mt-1 opacity-70">
+            Впишите новое значение <code class="font-mono bg-destructive/10 px-1 rounded">VK_ACCESS_TOKEN</code>
+            в <code class="font-mono bg-destructive/10 px-1 rounded">.env</code> на сервере
+            и перезапустите backend: <code class="font-mono bg-destructive/10 px-1 rounded">pm2 restart cabinet-backend</code>
+          </p>
+        </div>
+        <button
+          class="shrink-0 text-xs underline opacity-70 hover:opacity-100"
+          :disabled="tokenChecking"
+          @click="checkTokenHealth"
+        >
+          {{ tokenChecking ? 'Проверяю…' : 'Проверить снова' }}
+        </button>
+      </div>
+
+      <!-- Token OK banner (shown briefly after manual check) -->
+      <div
+        v-else-if="tokenOk === true"
+        class="flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 rounded-xl px-4 py-2 text-sm"
+      >
+        <span>✓</span>
+        <span>VK-токен действителен</span>
+        <button class="ml-auto text-xs opacity-60 hover:opacity-100 underline" @click="tokenOk = null">✕</button>
+      </div>
+
       <!-- Фильтры -->
       <div class="flex flex-wrap gap-4 items-end">
         <div>
@@ -184,6 +246,14 @@ const chartOptions = {
           @click="doPoll"
         >
           {{ polling ? 'Сбор данных…' : '↻ Обновить сейчас' }}
+        </button>
+        <button
+          class="px-3 py-1.5 rounded border text-sm disabled:opacity-50 text-muted-foreground hover:text-foreground transition-colors"
+          :disabled="tokenChecking"
+          :title="tokenOk === true ? 'Токен действителен' : 'Проверить токен VK'"
+          @click="checkTokenHealth"
+        >
+          {{ tokenChecking ? '…' : (tokenOk === true ? '✓ Токен OK' : '🔑 Проверить токен') }}
         </button>
         <span v-if="pollMsg" class="text-xs text-muted-foreground">{{ pollMsg }}</span>
       </div>

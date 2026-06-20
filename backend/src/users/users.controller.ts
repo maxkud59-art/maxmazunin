@@ -1,8 +1,9 @@
-import { Body, Controller, Delete, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -23,9 +24,15 @@ export class UsersController {
   }
 
   @Get()
-  @ApiOperation({ summary: '[ADMIN] Список пользователей' })
+  @ApiOperation({ summary: '[ADMIN] Список пользователей с профилем' })
   findAll() {
     return this.usersService.findAll();
+  }
+
+  @Patch(':id')
+  @ApiOperation({ summary: '[ADMIN] Обновить профиль пользователя' })
+  updateProfile(@Param('id') id: string, @Body() dto: UpdateUserProfileDto) {
+    return this.usersService.updateProfile(id, dto);
   }
 
   @Delete(':id')

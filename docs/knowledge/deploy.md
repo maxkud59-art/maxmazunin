@@ -44,29 +44,69 @@ HTTPS maxmazunin.ru:
 
 Монтирует `/etc/letsencrypt` с хоста → nginx читает сертификаты через volume.
 
-## Шаги редеплоя (обновление)
+## ⚠️ РЕАЛЬНЫЙ деплой (PM2, не docker-compose)
+
+**ВНИМАНИЕ:** CLAUDE.md упоминает docker-compose, но приложение реально запускается через **PM2** на нативном Postgres. docker-compose.prod.yml устарел и не используется.
+
+### Путь на сервере: `/home/deploy/maxmazunin/` (не `/opt/...`)
+
+### Полный цикл с локальной машины:
 
 ```bash
-# С локальной машины: отправить код
-rsync -avz --exclude=node_modules --exclude=.nuxt --exclude=dist --exclude=.output \
-  /Users/maksim/Mazunin_progs/maxmazunin-cabinet/ \
-  deploy@72.56.234.73:/opt/maxmazunin-cabinet/
+# 1. Rsync изменённых файлов
+rsync -avz --exclude node_modules --exclude dist --exclude .nuxt --exclude .output \
+  -e "ssh -i ~/.ssh/id_ed25519" \
+  /Users/maksim/Mazunin_progs/maxmazunin-cabinet/backend/src/ \
+  deploy@72.56.234.73:/home/deploy/maxmazunin/backend/src/
 
-# На сервере: пересобрать и перезапустить
-ssh deploy@72.56.234.73
-cd /opt/maxmazunin-cabinet
-docker compose -f docker-compose.prod.yml up -d --build
+rsync -avz --exclude node_modules --exclude .nuxt --exclude .output \
+  -e "ssh -i ~/.ssh/id_ed25519" \
+  /Users/maksim/Mazunin_progs/maxmazunin-cabinet/frontend/ \
+  deploy@72.56.234.73:/home/deploy/maxmazunin/frontend/
 
-# Если есть новые миграции
-docker compose -f docker-compose.prod.yml exec backend npx prisma migrate deploy
+# 2. Запустить безопасный PM2-редеплой на сервере
+ssh -i ~/.ssh/id_ed25519 deploy@72.56.234.73 \
+  "bash /home/deploy/maxmazunin/scripts/pm2-redeploy.sh"
 ```
 
-Или через git (если настроен remote):
+### pm2-redeploy.sh делает:
+1. `scripts/backup-db.sh` → pg_dump → `/home/deploy/backups/cabinet_DATE.sql.gz`
+2. `npx prisma db push --accept-data-loss` (НИКОГДА не --force-reset)
+3. `npm run build` + `pm2 restart cabinet-backend`
+4. `npm run build` + `pm2 restart cabinet-frontend`
+5. Health check
+
+### ЗАПРЕЩЕНО при любом деплое:
+- `prisma migrate reset` / `prisma migrate dev` / `--force-reset`
+- `DROP TABLE` / `DROP SCHEMA` / пересоздание БД
+- Удаление volume Postgres (данные в `/var/lib/postgresql/16/main/`)
+- Удаление `uploads/` без явного указания владельца
+
+### Восстановление из бэкапа:
 ```bash
-# На сервере:
-cd /opt/maxmazunin-cabinet && git pull
-docker compose -f docker-compose.prod.yml up -d --build
+# Список дампов:
+ls -lh /home/deploy/backups/
+
+# Восстановить:
+PGPASSWORD=$DB_PASSWORD gunzip -c /home/deploy/backups/cabinet_DATE.sql.gz \
+  | psql -U cabinet -h localhost cabinet
+
+# Пересоздать только если БД пуста:
+# createdb -U cabinet cabinet  # только если БД не существует
 ```
+
+### Создание/восстановление админа (без удаления других пользователей):
+```bash
+ssh deploy@72.56.234.73 "
+  set -a && source /home/deploy/maxmazunin/.env && set +a
+  cd /home/deploy/maxmazunin/backend
+  ADMIN_EMAIL=maxkud59@gmail.com ADMIN_PASSWORD=Maxkud59 npm run admin:create
+"
+```
+
+## Шаги редеплоя docker-compose (УСТАРЕЛО — не использовать)
+
+~~docker compose -f docker-compose.prod.yml up -d --build~~
 
 ## Первый деплой
 

@@ -28,6 +28,28 @@ export interface UserResponse {
   email?: string;
   role?: UserResponseRole;
   createdAt?: string;
+  /** @nullable */
+  firstName?: string | null;
+  /** @nullable */
+  lastName?: string | null;
+  /** @nullable */
+  nickname?: string | null;
+  messengerRole?: MessengerRole;
+  companies?: Company[];
+  /** @nullable */
+  jobTitle?: string | null;
+  /** @nullable */
+  avatarUrl?: string | null;
+}
+
+export interface UpdateUserProfileDto {
+  firstName?: string;
+  lastName?: string;
+  nickname?: string;
+  messengerRole?: MessengerRole;
+  companies?: Company[];
+  jobTitle?: string;
+  avatarUrl?: string;
 }
 
 export type CreateUserDtoRole = typeof CreateUserDtoRole[keyof typeof CreateUserDtoRole];
@@ -100,6 +122,209 @@ export interface HourProfileItemDto {
   daysCount?: number;
 }
 
+export type MessengerRole = typeof MessengerRole[keyof typeof MessengerRole];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const MessengerRole = {
+  GEN_DIRECTOR: 'GEN_DIRECTOR',
+  COMMERCIAL_DIRECTOR: 'COMMERCIAL_DIRECTOR',
+  SALES_DIRECTOR: 'SALES_DIRECTOR',
+  ROP: 'ROP',
+  MANAGER: 'MANAGER',
+  DESIGN_DIRECTOR: 'DESIGN_DIRECTOR',
+  DESIGNER: 'DESIGNER',
+  PRODUCTION_HEAD: 'PRODUCTION_HEAD',
+  ASSEMBLER: 'ASSEMBLER',
+  PROGRAMMER: 'PROGRAMMER',
+  ACCOUNTANT: 'ACCOUNTANT',
+  OTHER: 'OTHER',
+} as const;
+
+export type Company = typeof Company[keyof typeof Company];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const Company = {
+  IZIBOOK: 'IZIBOOK',
+  IZINEON: 'IZINEON',
+} as const;
+
+export interface UserProfileDto {
+  id?: string;
+  email?: string;
+  /** @nullable */
+  firstName?: string | null;
+  /** @nullable */
+  lastName?: string | null;
+  /** @nullable */
+  nickname?: string | null;
+  /** @nullable */
+  avatarUrl?: string | null;
+  /** @nullable */
+  jobTitle?: string | null;
+  messengerRole?: MessengerRole;
+  companies?: Company[];
+  isComplete?: boolean;
+}
+
+export interface UpdateProfileDto {
+  firstName?: string;
+  lastName?: string;
+  nickname?: string;
+  avatarUrl?: string;
+  jobTitle?: string;
+}
+
+export interface SetUserRoleDto {
+  messengerRole: MessengerRole;
+  jobTitle?: string;
+  companies?: Company[];
+}
+
+export interface ChatMemberDto {
+  userId?: string;
+  /** @nullable */
+  firstName?: string | null;
+  /** @nullable */
+  lastName?: string | null;
+  /** @nullable */
+  nickname?: string | null;
+  /** @nullable */
+  avatarUrl?: string | null;
+  /** @nullable */
+  jobTitle?: string | null;
+  role?: string;
+  muted?: boolean;
+}
+
+export interface LastMessageDto {
+  id?: string;
+  /** @nullable */
+  body?: string | null;
+  /** @nullable */
+  senderName?: string | null;
+  createdAt?: string;
+}
+
+export type ChatDtoType = typeof ChatDtoType[keyof typeof ChatDtoType];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ChatDtoType = {
+  DIRECT: 'DIRECT',
+  GROUP: 'GROUP',
+  NEWS: 'NEWS',
+} as const;
+
+export interface ChatDto {
+  id?: string;
+  type?: ChatDtoType;
+  /** @nullable */
+  title?: string | null;
+  /** @nullable */
+  avatarUrl?: string | null;
+  /** @nullable */
+  company?: string | null;
+  lastMessage?: LastMessageDto;
+  unreadCount?: number;
+  updatedAt?: string;
+  members?: ChatMemberDto[];
+}
+
+export interface CreateGroupChatDto {
+  title: string;
+  avatarUrl?: string;
+  memberIds: string[];
+}
+
+export interface SenderDto {
+  id?: string;
+  /** @nullable */
+  firstName?: string | null;
+  /** @nullable */
+  lastName?: string | null;
+  /** @nullable */
+  nickname?: string | null;
+  /** @nullable */
+  avatarUrl?: string | null;
+}
+
+export interface AttachmentDto {
+  id?: string;
+  kind?: string;
+  storageKey?: string;
+  fileName?: string;
+  mime?: string;
+  sizeBytes?: number;
+  url?: string;
+}
+
+/**
+ * @nullable
+ */
+export type MessageDtoReplyTo = unknown | null;
+
+export interface MessageDto {
+  id?: string;
+  chatId?: string;
+  type?: string;
+  body?: string;
+  sender?: SenderDto;
+  /** @nullable */
+  replyTo?: MessageDtoReplyTo;
+  attachments?: AttachmentDto[];
+  mentions?: string[];
+  createdAt?: string;
+  /** @nullable */
+  editedAt?: string | null;
+  /** @nullable */
+  deletedAt?: string | null;
+  isMine?: boolean;
+}
+
+export interface MessagesPageDto {
+  items?: MessageDto[];
+  hasMore?: boolean;
+  /** @nullable */
+  nextCursor?: string | null;
+}
+
+export interface SendMessageDto {
+  body?: string;
+  replyToId?: string;
+  attachmentKeys?: string[];
+}
+
+export interface EditMessageDto {
+  body: string;
+}
+
+export interface UploadResultDto {
+  storageKey?: string;
+  fileName?: string;
+  mime?: string;
+  sizeBytes?: number;
+  kind?: string;
+  url?: string;
+}
+
+export interface CreateGrantDto {
+  userId: string;
+}
+
+export interface GrantDto {
+  id?: string;
+  userId?: string;
+  /** @nullable */
+  userNickname?: string | null;
+  /** @nullable */
+  userName?: string | null;
+  grantedBy?: string;
+  active?: boolean;
+  createdAt?: string;
+}
+
 export interface PollResultDto {
   cabinetId?: string;
   snapshots?: number;
@@ -129,5 +354,25 @@ from: string;
  * YYYY-MM-DD (МСК, включительно)
  */
 to: string;
+};
+
+export type MessengerControllerSearchUsersParams = {
+q?: string;
+};
+
+export type MessengerControllerOpenDirect201 = {
+  chatId?: string;
+};
+
+export type MessengerControllerGetMessagesParams = {
+cursor?: string;
+};
+
+export type MessengerControllerMarkReadBody = {
+  lastMessageId?: string;
+};
+
+export type UploadControllerUploadFileBody = {
+  file?: Blob;
 };
 

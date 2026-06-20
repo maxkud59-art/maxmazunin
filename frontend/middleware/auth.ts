@@ -1,5 +1,7 @@
+import { useAuthStore } from '~/stores/auth';
+
 export default defineNuxtRouteMiddleware(() => {
-  if (process.server) return;
-  const token = localStorage.getItem('auth_token');
-  if (!token) return navigateTo('/login');
+  const auth = useAuthStore();
+  auth.hydrate();
+  if (!auth.token) return navigateTo('/login');
 });

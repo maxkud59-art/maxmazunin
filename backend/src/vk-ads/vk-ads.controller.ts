@@ -58,4 +58,11 @@ export class VkAdsController {
   poll(): Promise<PollResultDto[]> {
     return this.vkAdsService.pollSnapshots();
   }
+
+  @Get('token-health')
+  @ApiOperation({ summary: 'Проверить валидность VK-токена (тестовый запрос к VK API)' })
+  @ApiResponse({ status: 200, schema: { properties: { ok: { type: 'boolean' }, message: { type: 'string' } } } })
+  checkTokenHealth(): Promise<{ ok: boolean; message: string }> {
+    return this.vkAdsService.checkTokenHealth();
+  }
 }

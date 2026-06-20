@@ -21,6 +21,8 @@
 | `POLL_INTERVAL_MINUTES` | нет | Интервал сбора снимков VK в минутах (default: `5`) |
 | `REDIS_ENABLED` | нет | `true` чтобы включить Redis (default: `false`) |
 | `REDIS_URL` | нет | Redis DSN (нужен только при `REDIS_ENABLED=true`) |
+| `VK_GROUP_TOKEN` | нет | Community access token с правом messages (ИИ-ассистент) |
+| `VK_GROUP_ID` | нет | Числовой ID сообщества VK (ИИ-ассистент) |
 
 ## Prod docker-compose (`docker-compose.prod.yml`)
 
