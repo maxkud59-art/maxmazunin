@@ -30,20 +30,22 @@ export class DirectoriesService implements OnModuleInit {
   }
 
   private async seedDefaults() {
-    for (const s of DEFAULT_CRM_STATUSES) {
-      await this.prisma.crmStatus.upsert({
-        where: { id: `default_crm_${s.order}` },
-        create: { id: `default_crm_${s.order}`, ...s },
-        update: {},
-      });
-    }
-    for (const s of DEFAULT_ORDER_STATUSES) {
-      await this.prisma.orderStatus.upsert({
-        where: { id: `default_ord_${s.order}` },
-        create: { id: `default_ord_${s.order}`, ...s },
-        update: {},
-      });
-    }
+    try {
+      for (const s of DEFAULT_CRM_STATUSES) {
+        await this.prisma.crmStatus.upsert({
+          where: { id: `default_crm_${s.order}` },
+          create: { id: `default_crm_${s.order}`, ...s },
+          update: {},
+        });
+      }
+      for (const s of DEFAULT_ORDER_STATUSES) {
+        await this.prisma.orderStatus.upsert({
+          where: { id: `default_ord_${s.order}` },
+          create: { id: `default_ord_${s.order}`, ...s },
+          update: {},
+        });
+      }
+    } catch (_e) { /* models may not exist in this deployment */ }
   }
 
   // ─── CRM Statuses ────────────────────────────────────────────────────────────

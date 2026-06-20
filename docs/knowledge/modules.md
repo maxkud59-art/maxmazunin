@@ -317,15 +317,42 @@ CSS в ячейке: `object-fit: cover; object-position: {panX}% {panY}%; trans
 
 Утилита: `backend/src/book-layout/quality.util.ts`. Фракции ячеек для 11 шаблонов прошиты статически.
 
-### Улучшение фото (добавлено 2026-06-20)
+### Улучшение фото (обновлено 2026-06-21)
 
-`POST /api/book-layout/photos/:photoId/enhance` — применяет sharp: sharpen + normalise + saturation boost. Результат: `enh_{uuid}.jpg` + `enh_thumb_{uuid}.jpg`. Поля `BookPhoto.enhancedKey`, `enhancedThumbKey`, `useEnhanced`.
+**Async pipeline (основной):** `POST /api/book-layout/photos/:photoId/enhance/start` `{ bookSize, templateId, cellIndex }` → `{ jobId }`.  
+Клиент поллит `GET /api/book-layout/photos/:photoId/enhance/job/:jobId` → `{ status, progress, message, photo? }`.  
+По завершении (`status='done'`) в ответе есть `photo` с новыми `enhancedKey/enhancedThumbKey/width/height`.
 
-`POST /api/book-layout/photos/:photoId/enhance/apply` `{ apply: boolean }` — переключает `useEnhanced` в БД без пересоздания файлов.
+**AI пайплайн (enhance-service, порт 8001):**
+1. **GFPGAN** на оригинальном изображении — восстановление лиц (fidelity=0.85). Запускается первым, пока RAM свободна.
+2. **Real-ESRGAN ×2** (первый проход) — апскейл после GFPGAN.
+3. **Real-ESRGAN ×2** (второй проход) — если нужный масштаб >2.5× (например, большая ячейка).
+4. Ресайз до точного target (target = 300 DPI для конкретной ячейки по `calculatePrintQuality()`).
+5. Unsharp mask (sigma=0.7, strength=0.4), save JPEG q95.
 
-Адаптер: `backend/src/book-layout/enhance.adapter.ts` (интерфейс `ImageEnhanceClient`). При наличии `IMAGE_ENHANCE_API_KEY` можно подключить AI-апскейлер.
+**Target-aware:** бэкенд вычисляет `requiredPixels` из `calculatePrintQuality()` и передаёт `target_w/target_h` в Python-сервис. Python сам определяет нужный масштаб и количество проходов.
 
-`enrichPhoto` в сервисе автоматически отдаёт enhanced-URL когда `useEnhanced=true`.
+**Оригинал никогда не удаляется.** Улучшенная версия = отдельный файл.
+
+**Память и производительность:**  
+- GFPGAN модели: GFPGANv1.4.pth (333MB) + facexlib detection (111MB) + facexlib parsing (80MB).  
+- ESRGAN модель: RealESRGAN_x2plus.pth (63MB, ~200MB RSS в PyTorch).  
+- Пайплайн: GFPGAN освобождается до ESRGAN (`del restorer; gc.collect(); malloc_trim(0)`).  
+- Пик RSS: ~1100–1150MB (второй ESRGAN проход на 1562×2560).  
+- PM2 `max-memory-restart=1500M`. Swap 2GB обязателен.  
+- Время для 781×1280 → 2362×3543: ~450s (7.5 мин). NestJS timeout: 660s.  
+- axios timeout для поллинга статуса: 30s (torch.load держит GIL до 15с).
+
+**Fallback:** если enhance-service недоступен → `SharpEnhanceClient` (sharpen + normalise, без апскейла). NestJS переключается на AI клиент при следующем запросе (после рестарта enhance-service).
+
+`POST /api/book-layout/photos/:photoId/enhance/apply` `{ apply: boolean }` — переключает `useEnhanced` в БД.
+
+Адаптер: `backend/src/book-layout/enhance.adapter.ts` — `AiEnhanceClient`, `SharpEnhanceClient`, фабрика `createEnhanceClient()`.  
+`enrichPhoto()` в сервисе отдаёт enhanced-URL когда `useEnhanced=true`.
+
+**Переменные окружения enhance-service:**
+- `ENABLE_GFPGAN=true` — включить GFPGAN
+- `GFPGAN_FIDELITY=0.85` — степень восстановления лиц (0=оригинал, 1=полный AI)
 
 ### Переменные окружения
 

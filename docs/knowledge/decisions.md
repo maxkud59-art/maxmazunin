@@ -19,11 +19,25 @@
 
 **Решение:**
 - Swap 2GB создан на сервере (`/swapfile`, `vm.swappiness=10`, в `/etc/fstab` для персистентности).
-- PM2 `max_memory_restart 600M` для enhance-service: если память превысит 600MB, PM2 перезапустит процесс до того, как Linux сделает OOM kill.
-- `ENABLE_GFPGAN=false` явно в `.env` + передан через `pm2 restart --update-env`. Даёт -248MB в baseline enhance-service (554 → 306MB).
-- nginx `proxy_read_timeout 300s` для `/api/` — закрывает проблему 504 при длинных операциях (VK poll, sync).
+- PM2 `max_memory_restart 1500M` для enhance-service (GFPGAN включён, пик ~1140MB при втором ESRGAN проходе на 1562×2560).
+- `ENABLE_GFPGAN=true` + `GFPGAN_FIDELITY=0.85` в `.env`.
+- nginx `proxy_read_timeout 300s` для `/api/`.
 
-**Причина:** OOM без swap → Linux убивал backend-процесс при пиковой нагрузке enhance → таймаут сайта с телефона. Подробнее в gotchas.md (2026-06-21).
+**Причина:** OOM без swap → Linux убивал backend-процесс при пиковой нагрузке enhance. Подробнее в gotchas.md (2026-06-21).
+
+---
+
+## 2026-06-21 | Book Layout: AI-улучшение фото до 300 DPI (target-aware GFPGAN + ESRGAN)
+
+**Решение:**
+- Кнопка "AI Улучшить до печати → {W}×{H}" передаёт контекст (bookSize, templateId, cellIndex) в бэкенд.
+- Бэкенд вычисляет `requiredPixels` через `calculatePrintQuality()` и передаёт `target_w/target_h` в Python-сервис.
+- Python-сервис: GFPGAN (на оригинале, пока RAM свободна) → ESRGAN ×2 → опциональный второй ESRGAN ×2 (если нужно >2.5×) → ресайз до точного target → unsharp mask.
+- **Порядок операций**: GFPGAN первым (baseline RAM ~300MB, пик ~950MB) → освобождается через `del restorer; gc.collect(); malloc_trim(0)` → ESRGAN (+200MB).
+- Оригинал фото НЕ удаляется. Улучшенная версия — отдельный файл (`enh_*.jpg`).
+- NestJS timeout увеличен до 660s; axios timeout для поллинга — 30s (torch.load держит GIL).
+
+**Причина:** Пользователи хотят видеть результат улучшения именно до нужного разрешения для печати конкретной ячейки (не просто ×2). Размытые лица на семейных фото — ключевая проблема → GFPGAN с fidelity=0.85.
 
 ---
 

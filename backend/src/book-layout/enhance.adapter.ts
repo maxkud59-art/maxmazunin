@@ -75,7 +75,8 @@ export class AiEnhanceClient implements ImageEnhanceClient {
   }
 
   async getJobStatus(jobId: string) {
-    const { data } = await axios.get(`${this.baseUrl}/enhance/status/${jobId}`, { timeout: 5_000 });
+    // 30s timeout: torch.load can hold the Python GIL for ~10-20s during model loading
+    const { data } = await axios.get(`${this.baseUrl}/enhance/status/${jobId}`, { timeout: 30_000 });
     return {
       status: data.status as 'pending' | 'processing' | 'done' | 'error',
       progress: data.progress ?? 0,

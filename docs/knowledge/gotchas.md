@@ -188,6 +188,32 @@ pm2 show enhance-service   # max memory restart: 629145600
 
 ---
 
+## 2026-06-21 | enhance-service: OOM при GFPGAN + ESRGAN одновременно
+
+**Симптом:** При `ENABLE_GFPGAN=true` enhance-service убивается PM2 или Linux OOM killer через ~90с.
+
+**Причина:** ESRGAN модель (~200MB RSS) остаётся в памяти, пока GFPGAN загружает свои модели (GFPGANv1.4=333MB + facexlib detection=111MB + parsing=80MB = ~524MB). Итого пик: 300(base) + 200(ESRGAN) + 524(GFPGAN) ≈ 1024MB + PyTorch workspace → >1200MB.
+
+**Фикс (2026-06-21):**
+1. **Порядок**: GFPGAN запускается ПЕРВЫМ на оригинальном изображении (пока ESRGAN не загружен). После GFPGAN: `del restorer; gc.collect(); ctypes.CDLL('libc.so.6').malloc_trim(0)` — возвращает страницы malloc-аллокатора OS. Затем ESRGAN загружается.
+2. PM2 `max_memory_restart 1500M` (пик ~1140MB при втором ESRGAN проходе на 1562×2560px).
+3. 2GB swap обязателен.
+
+**Второй gotcha — GIL блокировка во время torch.load:**  
+`torch.load` держит Python GIL несколько секунд → FastAPI не может ответить на `/enhance/status` → NestJS получает timeout. Фикс: увеличить `getJobStatus` axios timeout с 5_000 до 30_000ms.
+
+---
+
+## 2026-06-21 | enhance-service: NestJS Backend использует SharpEnhanceClient вместо AiEnhanceClient
+
+**Симптом:** Улучшение возвращает результат за <15 секунд, output 896×1200 (такой же размер, как input).
+
+**Причина:** `createEnhanceClient()` вызывается в конструкторе `BookLayoutService`. Если enhance-service не успел запуститься к моменту старта backend, factory возвращает `SharpEnhanceClient` и кэширует его. Последующие вызовы используют кэшированный SharpEnhanceClient.
+
+**Фикс:** В `getEnhanceClient()` проверять `instanceof AiEnhanceClient`. Если текущий клиент не AI — повторно вызывать `createEnhanceClient()`. Так backend обновляется до AI клиента при следующем запросе после рестарта enhance-service.
+
+---
+
 ## 2026-06-20 | Тревелбук: «Ошибка запуска генерации» при клике «Сгенерировать»
 
 **Симптом:** UI Тревелбука открывается, поля заполняются, но клик «Сгенерировать» → мгновенная ошибка «Ошибка запуска генерации». Сервисы работают, маршруты зарегистрированы.
