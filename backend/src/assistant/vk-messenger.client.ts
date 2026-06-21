@@ -160,17 +160,17 @@ export class VkMessengerClient {
     }));
   }
 
-  /** Отправить сообщение в диалог */
-  async sendMessage(peerId: number, text: string): Promise<number> {
+  /** Отправить сообщение в диалог (attachment — comma-separated VK attachment string) */
+  async sendMessage(peerId: number, text: string, attachment?: string): Promise<number> {
     const randomId = Math.floor(Math.random() * 2_000_000_000);
-    const data = await this.retry(() =>
-      this.call('messages.send', {
-        group_id: this.groupId,
-        peer_id: peerId,
-        message: text,
-        random_id: randomId,
-      }),
-    );
+    const params: Record<string, any> = {
+      group_id: this.groupId,
+      peer_id: peerId,
+      message: text,
+      random_id: randomId,
+    };
+    if (attachment) params.attachment = attachment;
+    const data = await this.retry(() => this.call('messages.send', params));
     if (data.error) throw new Error(`VK send error: ${data.error.error_msg ?? JSON.stringify(data.error)}`);
     return typeof data.response === 'number' ? data.response : 0;
   }

@@ -81,7 +81,25 @@
             <label class="form-label">Название</label>
             <input v-model="phraseForm.title" class="form-input" placeholder="Краткое название фразы..." />
             <label class="form-label">Текст</label>
-            <textarea v-model="phraseForm.text" class="form-textarea" rows="5" placeholder="Полный текст фразы, который вставится в сообщение..."></textarea>
+            <div class="textarea-wrap">
+              <div class="insert-bar">
+                <button type="button" class="ins-btn" @click="insertAtCursor('[Имя]')" title="Вставить имя клиента">[Имя]</button>
+                <button type="button" class="ins-btn" :class="{ active: attachPanel }" @click="attachPanel = !attachPanel">+ Вложение</button>
+              </div>
+              <div v-if="attachPanel" class="attach-row">
+                <select v-model="attachType" class="form-input attach-type">
+                  <option value="photo">Фото</option>
+                  <option value="video">Видео</option>
+                  <option value="clip">Клип</option>
+                  <option value="audio">Аудио</option>
+                  <option value="audio_message">Голосовое</option>
+                  <option value="doc">Документ</option>
+                </select>
+                <input v-model="attachUrl" class="form-input attach-url" placeholder="https://vk.com/photo-12345_678" />
+                <button type="button" class="ins-btn ins-btn-ok" @click="insertAttachment">Вставить</button>
+              </div>
+              <textarea ref="phraseTextareaRef" v-model="phraseForm.text" class="form-textarea" rows="7" placeholder="Полный текст фразы, который вставится в сообщение..."></textarea>
+            </div>
           </div>
         </div>
         <div class="modal-footer">
@@ -96,7 +114,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, nextTick } from 'vue';
 import type { PhraseCategory, QuickPhrase } from '~/composables/useAssistantModule';
 
 const api = useAssistantModule();
@@ -113,6 +131,33 @@ const catForm = ref({ name: '' });
 const phraseModal = ref(false);
 const phraseEditId = ref<string | null>(null);
 const phraseForm = ref({ categoryId: '', title: '', text: '' });
+
+const phraseTextareaRef = ref<HTMLTextAreaElement | null>(null);
+const attachPanel = ref(false);
+const attachType = ref('photo');
+const attachUrl = ref('');
+
+function insertAtCursor(marker: string) {
+  const el = phraseTextareaRef.value;
+  if (!el) { phraseForm.value.text += marker; return; }
+  const start = el.selectionStart ?? phraseForm.value.text.length;
+  const end = el.selectionEnd ?? start;
+  phraseForm.value.text = phraseForm.value.text.slice(0, start) + marker + phraseForm.value.text.slice(end);
+  nextTick(() => { el.focus(); el.setSelectionRange(start + marker.length, start + marker.length); });
+}
+
+function insertAttachment() {
+  const url = attachUrl.value.trim();
+  if (!url) return;
+  const type = attachType.value;
+  const typeEsc = type.replace('_', '_?');
+  const m = url.match(new RegExp(`(?:vk\\.com/)?${typeEsc}(-?\\d+_\\d+)`));
+  if (!m) { alert(`Не удалось извлечь ID из URL для типа «${type}»`); return; }
+  const marker = `[${type}${m[1]}]`;
+  insertAtCursor(marker);
+  attachUrl.value = '';
+  attachPanel.value = false;
+}
 
 onMounted(() => loadAll());
 
@@ -153,12 +198,16 @@ async function archiveCat(cat: PhraseCategory) {
 function openCreatePhrase(categoryId?: string) {
   phraseEditId.value = null;
   phraseForm.value = { categoryId: categoryId ?? categories.value[0]?.id ?? '', title: '', text: '' };
+  attachPanel.value = false;
+  attachUrl.value = '';
   phraseModal.value = true;
 }
 
 function openEditPhrase(ph: QuickPhrase) {
   phraseEditId.value = ph.id;
   phraseForm.value = { categoryId: ph.categoryId, title: ph.title, text: ph.text };
+  attachPanel.value = false;
+  attachUrl.value = '';
   phraseModal.value = true;
 }
 
@@ -234,4 +283,14 @@ async function archivePhrase(ph: QuickPhrase) {
 .spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid #d1d5db; border-top-color: #6366f1; border-radius: 50%; animation: spin 0.7s linear infinite; }
 .spinner-sm { display: inline-block; width: 12px; height: 12px; border: 2px solid rgba(255,255,255,0.4); border-top-color: #fff; border-radius: 50%; animation: spin 0.7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+.textarea-wrap { display: flex; flex-direction: column; gap: 6px; }
+.insert-bar { display: flex; gap: 6px; flex-wrap: wrap; }
+.ins-btn { background: #f1f5f9; border: 1px solid #d1d5db; border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; color: #374151; white-space: nowrap; }
+.ins-btn:hover { background: #e0e7ff; border-color: #6366f1; color: #4338ca; }
+.ins-btn.active { background: #e0e7ff; border-color: #6366f1; color: #4338ca; }
+.ins-btn-ok { background: #6366f1; color: #fff; border-color: #6366f1; }
+.ins-btn-ok:hover { background: #4f46e5; }
+.attach-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.attach-type { width: 130px; flex-shrink: 0; }
+.attach-url { flex: 1; min-width: 160px; }
 </style>

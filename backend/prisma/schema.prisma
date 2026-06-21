@@ -380,10 +380,11 @@ model VkClient {
   firstContactAt DateTime?
   crmStatusId    String?
 
-  conversation   VkConversation @relation(fields: [peerId], references: [peerId])
-  crmStatus      CrmStatus?     @relation(fields: [crmStatusId], references: [id])
-  tagLinks       ClientTag[]
-  orders         Order[]
+  conversation    VkConversation        @relation(fields: [peerId], references: [peerId])
+  crmStatus       CrmStatus?            @relation(fields: [crmStatusId], references: [id])
+  tagLinks        ClientTag[]
+  orders          Order[]
+  scenarioStates  ClientScenarioState[]
 
   @@index([firstContactAt])
 }
@@ -460,6 +461,7 @@ model QuickPhrase {
   category   PhraseCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   title      String
   text       String
+  hotkey     String?
   order      Int            @default(0)
   archived   Boolean        @default(false)
 }
@@ -531,4 +533,96 @@ model AiKnowledgeEntry {
   enabled   Boolean  @default(true)
   order     Int      @default(0)
   createdAt DateTime @default(now())
+}
+
+// ─── ИИ-ассистент: Боты ───────────────────────────────────────────────────────
+
+enum BotType {
+  RULE
+  SCENARIO
+}
+
+enum BotStepType {
+  TRIGGER
+  SEND_MESSAGE
+  SET_CRM_STATUS
+  SET_TAGS
+  SET_ORDER_STATUS
+  MARK_IMPORTANT
+  EXTRACT_FIELD
+  SET_REMINDER
+  ASSIGN_MANAGER
+  NOTIFY_MANAGER
+  LOG_STAT
+  CONDITION
+  DELAY
+  END_SCENARIO
+  UNSUBSCRIBE
+  GOTO_STEP
+}
+
+enum ScenarioStateStatus {
+  ACTIVE
+  WAITING_DELAY
+  DONE
+  CANCELLED
+}
+
+model Bot {
+  id        String   @id @default(cuid())
+  name      String
+  type      BotType  @default(RULE)
+  enabled   Boolean  @default(false)
+  archived  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  steps  BotStep[]
+  states ClientScenarioState[]
+  logs   BotLog[]
+}
+
+model BotStep {
+  id         String      @id @default(cuid())
+  botId      String
+  bot        Bot         @relation(fields: [botId], references: [id], onDelete: Cascade)
+  type       BotStepType
+  config     Json        @default("{}")
+  position   Int         @default(0)
+  nextStepId String?
+  branches   Json        @default("[]")
+  createdAt  DateTime    @default(now())
+
+  @@index([botId, position])
+}
+
+model ClientScenarioState {
+  id            String              @id @default(cuid())
+  clientId      String
+  client        VkClient            @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  botId         String
+  bot           Bot                 @relation(fields: [botId], references: [id], onDelete: Cascade)
+  currentStepId String?
+  vars          Json                @default("{}")
+  status        ScenarioStateStatus @default(ACTIVE)
+  scheduledAt   DateTime?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@index([clientId, botId])
+  @@index([status, scheduledAt])
+}
+
+model BotLog {
+  id        String   @id @default(cuid())
+  botId     String
+  bot       Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
+  clientId  String?
+  peerId    Int?
+  event     String
+  action    String
+  result    String?
+  createdAt DateTime @default(now())
+
+  @@index([botId, createdAt])
 }

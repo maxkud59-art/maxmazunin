@@ -428,7 +428,7 @@ VkConversation → VkClient (1:1)
 | `OrderStatus` | id, name, color, order, archived |
 | `Order` | id, number (autoincrement), clientId, orderStatusId, amount, items, comment, archived |
 | `PhraseCategory` | id, name, order, archived |
-| `QuickPhrase` | id, categoryId, title, text, order, archived |
+| `QuickPhrase` | id, categoryId, title, text, hotkey?, order, archived |
 | `Campaign` | id, name, channel, messageText, segmentFilter(json), status(enum), scheduledAt, totalCount, sentCount, errorCount |
 | `CampaignRecipient` | id, campaignId, peerId, clientName, status(enum PENDING/SENT/ERROR/SKIPPED), sentAt, error |
 | `AiSettings` | singleton id="default", systemPrompt, provider, model, temperature, draftMode |
@@ -436,6 +436,18 @@ VkConversation → VkClient (1:1)
 
 ### Адаптер VkMessengerClient (assistant/vk-messenger.client.ts)
 Переиспользуется в `BroadcastsModule` для `sendMessage(peerId, text)`. Все методы VK API только здесь.
+`sendMessage(peerId, text, attachment?)` — `attachment` это comma-separated VK attachment string (`photo-12_34,video-12_34`).
+
+### Утилита VK-вложений (assistant/vk-attachments.util.ts)
+- `parseVkMarkers(text, clientName?)` — заменяет `[Имя]` именем клиента, извлекает маркеры `[type<owner>_<id>]` в строку `attachment`, удаляет их из текста.
+- `extractMarkerFromUrl(url, type)` — из VK URL извлекает маркер `[type-owner_id]`.
+- Маркеры в тексте фраз: `[photo...]`, `[video...]`, `[clip...]`, `[audio...]`, `[audio_message...]`, `[doc...]`.
+
+### Seed быстрых фраз
+- Файл данных: `backend/seed/quick_phrases_seed.json` (297 фраз, 15 категорий).
+- Скрипт: `npm run seed:phrases` (→ `backend/prisma/seed-phrases.ts`).
+- Idempotent: upsert по stable-id `seed_cat_*` / `seed_ph_*`; не удаляет данные.
+- При первом запуске заполняет `AiSettings.systemPrompt` бизнес-контекстом ИЗИБУК.
 
 ### Рассылки — защита от блокировок VK
 - Пауза 1100мс между сообщениями (≈54/мин)

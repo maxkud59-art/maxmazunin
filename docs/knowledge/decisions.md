@@ -1,5 +1,21 @@
 # Журнал архитектурных решений
 
+## 2026-06-21 | ИИ-ассистент: метки вложений VK + seed быстрых фраз + системный контекст ИИ
+
+**Решение:**
+- `vk-attachments.util.ts` — утилита `parseVkMarkers(text, clientName)`: извлекает `[photo...]`, `[video...]`, `[clip...]`, `[audio...]`, `[audio_message...]`, `[doc...]` из текста в строку `attachment` для `messages.send`; заменяет `[Имя]` первым именем клиента.
+- `VkMessengerClient.sendMessage()` — добавлен параметр `attachment?: string`, передаётся в `messages.send`.
+- `AssistantService.sendMessage()` — перед отправкой вызывает `parseVkMarkers`; в БД сохраняется чистый текст (без маркеров), клиент получает вложения через VK API.
+- `QuickPhrase.hotkey String?` — добавлено в schema.prisma и DTOs.
+- `backend/seed/quick_phrases_seed.json` + `backend/prisma/seed-phrases.ts` — идемпотентный seed: `npm run seed:phrases`. Upsert по stable-id (`seed_cat_*`, `seed_ph_*`), не удаляет данные.
+- `AiSettings.systemPrompt` — при первом seed заполняется текстом бизнес-контекста ИЗИБУК; если уже задан — не перезаписывается.
+- UI быстрых фраз (`phrases.vue`) и мессенджера (`assistant/messenger.vue`) — кнопки `[Имя]` и `+ Вложение` с выбором типа и URL → вставка маркера в позицию курсора.
+- `extractMarkerFromUrl(url, type)` — утилита для извлечения маркера из VK URL (используется в UI).
+
+**Причина:** ТЗ от 2026-06-21. Готовые фразы содержат вложения (clip, photo, video); маркеры не должны быть видны клиенту — только через VK attachment API.
+
+---
+
 ## 2026-06-21 | ИИ-ассистент: полный модуль — 8 вкладок, 6 новых NestJS-модулей, 11 новых Prisma-моделей
 
 **Решение:**

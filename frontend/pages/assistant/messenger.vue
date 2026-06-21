@@ -110,19 +110,38 @@
             </div>
           </div>
 
-          <div class="thread-input">
-            <button class="phrase-toggle-btn" @click="togglePhrasePanel" title="Быстрые фразы">⚡</button>
-            <textarea
-              v-model="draftText"
-              class="msg-input"
-              placeholder="Написать сообщение..."
-              rows="2"
-              @keydown.enter.exact.prevent="sendMsg"
-            ></textarea>
-            <button class="send-btn" :disabled="!draftText.trim() || sending" @click="sendMsg">
-              <span v-if="sending" class="spinner-sm"></span>
-              <span v-else>➤</span>
-            </button>
+          <div class="thread-input-wrap">
+            <div class="thread-insert-bar">
+              <button type="button" class="ins-btn" @click="insertMsgAtCursor('[Имя]')">[Имя]</button>
+              <button type="button" class="ins-btn" :class="{ active: msgAttachPanel }" @click="msgAttachPanel = !msgAttachPanel">+ Вложение</button>
+            </div>
+            <div v-if="msgAttachPanel" class="thread-attach-row">
+              <select v-model="msgAttachType" class="msg-attach-select">
+                <option value="photo">Фото</option>
+                <option value="video">Видео</option>
+                <option value="clip">Клип</option>
+                <option value="audio">Аудио</option>
+                <option value="audio_message">Голосовое</option>
+                <option value="doc">Документ</option>
+              </select>
+              <input v-model="msgAttachUrl" class="msg-attach-url" placeholder="https://vk.com/photo-12345_678" />
+              <button type="button" class="ins-btn ins-btn-ok" @click="insertMsgAttachment">Вставить</button>
+            </div>
+            <div class="thread-input">
+              <button class="phrase-toggle-btn" @click="togglePhrasePanel" title="Быстрые фразы">⚡</button>
+              <textarea
+                ref="msgInputRef"
+                v-model="draftText"
+                class="msg-input"
+                placeholder="Написать сообщение..."
+                rows="2"
+                @keydown.enter.exact.prevent="sendMsg"
+              ></textarea>
+              <button class="send-btn" :disabled="!draftText.trim() || sending" @click="sendMsg">
+                <span v-if="sending" class="spinner-sm"></span>
+                <span v-else>➤</span>
+              </button>
+            </div>
           </div>
         </template>
       </main>
@@ -201,6 +220,11 @@ const mobileView = ref<'list' | 'thread' | 'client'>('list');
 
 const phrasePanelOpen = ref(false);
 const phraseCategories = ref<any[]>([]);
+
+const msgInputRef = ref<HTMLTextAreaElement | null>(null);
+const msgAttachPanel = ref(false);
+const msgAttachType = ref('photo');
+const msgAttachUrl = ref('');
 
 const FILTERS = [
   { id: 'all' as const, label: 'Все' },
@@ -317,6 +341,28 @@ async function togglePhrasePanel() {
 function insertPhrase(text: string) {
   draftText.value = (draftText.value + ' ' + text).trim();
   phrasePanelOpen.value = false;
+}
+
+function insertMsgAtCursor(marker: string) {
+  const el = msgInputRef.value;
+  if (!el) { draftText.value += marker; return; }
+  const start = el.selectionStart ?? draftText.value.length;
+  const end = el.selectionEnd ?? start;
+  draftText.value = draftText.value.slice(0, start) + marker + draftText.value.slice(end);
+  nextTick(() => { el.focus(); el.setSelectionRange(start + marker.length, start + marker.length); });
+}
+
+function insertMsgAttachment() {
+  const url = msgAttachUrl.value.trim();
+  if (!url) return;
+  const type = msgAttachType.value;
+  const typeEsc = type.replace('_', '_?');
+  const m = url.match(new RegExp(`(?:vk\\.com/)?${typeEsc}(-?\\d+_\\d+)`));
+  if (!m) { alert(`Не удалось извлечь ID из URL для типа «${type}»`); return; }
+  const marker = `[${type}${m[1]}]`;
+  insertMsgAtCursor(marker);
+  msgAttachUrl.value = '';
+  msgAttachPanel.value = false;
 }
 
 function showDateSep(idx: number): boolean {
@@ -442,7 +488,17 @@ function initials(name: string): string {
 .phrase-chip:hover { background: #dbeafe; }
 
 /* Thread input */
-.thread-input { display: flex; gap: 8px; padding: 12px; border-top: 1px solid #e5e7eb; background: #fff; flex-shrink: 0; align-items: flex-end; }
+.thread-input-wrap { border-top: 1px solid #e5e7eb; background: #fff; flex-shrink: 0; }
+.thread-insert-bar { display: flex; gap: 6px; padding: 6px 12px 0; flex-wrap: wrap; }
+.thread-attach-row { display: flex; gap: 6px; padding: 4px 12px; align-items: center; flex-wrap: wrap; }
+.msg-attach-select { border: 1px solid #d1d5db; border-radius: 6px; padding: 4px 6px; font-size: 12px; outline: none; }
+.msg-attach-url { flex: 1; min-width: 160px; border: 1px solid #d1d5db; border-radius: 6px; padding: 4px 8px; font-size: 12px; outline: none; }
+.msg-attach-url:focus { border-color: #2563eb; }
+.ins-btn { background: #f1f5f9; border: 1px solid #d1d5db; border-radius: 6px; padding: 3px 9px; font-size: 12px; cursor: pointer; color: #374151; white-space: nowrap; }
+.ins-btn:hover, .ins-btn.active { background: #dbeafe; border-color: #2563eb; color: #1d4ed8; }
+.ins-btn-ok { background: #2563eb; color: #fff; border-color: #2563eb; }
+.ins-btn-ok:hover { background: #1d4ed8; }
+.thread-input { display: flex; gap: 8px; padding: 8px 12px 12px; align-items: flex-end; }
 .phrase-toggle-btn { background: none; border: 1px solid #e5e7eb; border-radius: 8px; width: 36px; height: 36px; cursor: pointer; font-size: 16px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #555; }
 .phrase-toggle-btn:hover { background: #f0f0f0; }
 .msg-input { flex: 1; border: 1px solid #d1d5db; border-radius: 12px; padding: 8px 12px; font-size: 14px; resize: none; outline: none; font-family: inherit; line-height: 1.4; }

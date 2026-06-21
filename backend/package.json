@@ -10,7 +10,8 @@
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
     "admin:create": "ts-node -r tsconfig-paths/register prisma/seed.ts",
-    "seed:cabinets": "ts-node -r tsconfig-paths/register prisma/seed-cabinets.ts"
+    "seed:cabinets": "ts-node -r tsconfig-paths/register prisma/seed-cabinets.ts",
+    "seed:phrases": "ts-node -r tsconfig-paths/register prisma/seed-phrases.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",

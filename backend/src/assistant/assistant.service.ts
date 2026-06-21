@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { VkMessengerClient, VkGroupAuthError } from './vk-messenger.client';
+import { parseVkMarkers } from './vk-attachments.util';
 import { ConversationListDto } from './dto/conversation.dto';
 import { MessageListDto } from './dto/message.dto';
 import { ClientDto } from './dto/client.dto';
@@ -251,17 +252,26 @@ export class AssistantService {
   // ─── Write ─────────────────────────────────────────────────────────────────
 
   async sendMessage(conversationId: string, text: string): Promise<MessageDto> {
-    const conv = await this.prisma.vkConversation.findUnique({ where: { id: conversationId } });
+    const conv = await this.prisma.vkConversation.findUnique({
+      where: { id: conversationId },
+      include: { client: true },
+    });
     if (!conv) throw new NotFoundException('Диалог не найден');
 
-    const vkId = await this.vk.sendMessage(conv.peerId, text);
+    const clientName = conv.client?.firstName
+      ? `${conv.client.firstName} ${conv.client.lastName ?? ''}`.trim()
+      : conv.clientName;
+
+    const { cleanText, attachment } = parseVkMarkers(text, clientName);
+
+    const vkId = await this.vk.sendMessage(conv.peerId, cleanText, attachment || undefined);
 
     const msg = await this.prisma.vkMessage.create({
       data: {
         conversationId,
-        vkMessageId: vkId || Date.now(), // fallback if VK doesn't return id
+        vkMessageId: vkId || Date.now(),
         direction: 'OUT',
-        text,
+        text: cleanText,
         attachments: [],
         senderName: 'EasyBook',
         createdAt: new Date(),
@@ -270,7 +280,7 @@ export class AssistantService {
 
     await this.prisma.vkConversation.update({
       where: { id: conversationId },
-      data: { lastMessageText: text, lastMessageAt: msg.createdAt },
+      data: { lastMessageText: cleanText, lastMessageAt: msg.createdAt },
     });
 
     return {
