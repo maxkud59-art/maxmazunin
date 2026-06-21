@@ -4,7 +4,7 @@ import { BotsService } from './bots.service';
 import { CreateBotDto, UpdateBotDto, CreateBotStepDto, UpdateBotStepDto, ReorderStepsDto, AddClientToScenarioDto } from './dto';
 
 @UseGuards(JwtAuthGuard)
-@Controller('api/bots')
+@Controller('bots')
 export class BotsController {
   constructor(private readonly svc: BotsService) {}
 
