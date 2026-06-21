@@ -413,7 +413,7 @@ export class FinanceService implements OnModuleInit {
 
   async getCashflowReport(q: ReportQueryDto) {
     const dateRange = parseDateRange(q.from, q.to);
-    const projectFilter = q.project && q.project !== 'ALL' ? { project: q.project } : {};
+    const projectFilter = q.project && q.project !== 'ALL' ? { project: q.project as any } : {};
 
     const accounts = await this.prisma.finAccount.findMany({
       where: { archived: false },
@@ -490,7 +490,7 @@ export class FinanceService implements OnModuleInit {
 
   async getPnlReport(q: ReportQueryDto) {
     const dateRange = parseDateRange(q.from, q.to);
-    const projectFilter = q.project && q.project !== 'ALL' ? { project: q.project } : {};
+    const projectFilter = q.project && q.project !== 'ALL' ? { project: q.project as any } : {};
 
     // AccrualEntries for the period
     const accruals = await this.prisma.accrualEntry.findMany({
@@ -562,7 +562,7 @@ export class FinanceService implements OnModuleInit {
         amountKopecks: a.amountKopecks,
         project: a.project,
         description: a.description,
-        finOrderRef: a.finOrder?.clientRef,
+        finOrderRef: (a as any).finOrder?.clientRef,
       })),
     };
   }

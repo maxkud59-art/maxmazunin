@@ -16,7 +16,7 @@ import {
 @ApiTags('finance')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
-@Controller('api/finance')
+@Controller('finance')
 export class FinanceController {
   constructor(private readonly svc: FinanceService) {}
 
