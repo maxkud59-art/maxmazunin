@@ -1,5 +1,21 @@
 # Известные проблемы и фиксы
 
+## 2026-06-21 | Боты: Long Poll «longpoll for this group is not enabled»
+
+**Симптом:** `VkBotLongPollService` логирует: `VK getLongPollServer: One of the parameters specified was missing or invalid: longpoll for this group is not enabled`. Повторяется с exp back-off (3s→6s→12s→…→60s).
+
+**Причина:** В настройках сообщества VK нужно явно включить Long Poll API.
+
+**Фикс:**
+1. Открыть VK → Управление сообществом → Настройки → Работа с API → Long Poll API.
+2. Включить «Длинные опросы (Long Poll API)», версия 5.199.
+3. Поставить галки на события: `Новое сообщение`, `Нажатие на callback-кнопку`, `Разрешение/запрет сообщений`.
+4. Сохранить. Long Poll начнёт работать без рестарта backend (следующий retry сработает успешно).
+
+**Примечание:** Long Poll работает только если `VK_GROUP_TOKEN` и `VK_GROUP_ID` заданы в `.env`. Если не заданы — сервис выводит WARN и отключается.
+
+---
+
 ## 2026-06-20 | КРИТИЧНО: `--force-reset` или `migrate reset` уничтожает все данные
 
 **Симптом:** После деплоя исчезли все пользователи (включая админа), проекты книг, фотографии — БД пуста.
