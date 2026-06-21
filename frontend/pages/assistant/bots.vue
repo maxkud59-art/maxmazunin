@@ -128,7 +128,7 @@
                 <template v-if="cfg.event === 'message_new'">
                   <div class="cfg-row">
                     <label class="cfg-label">Направление</label>
-                    <select v-model="cfgFilter('direction')" class="cfg-select">
+                    <select v-model="cfg.filter.direction" class="cfg-select">
                       <option value="IN">Входящее (от клиента)</option>
                       <option value="OUT">Исходящее (от группы)</option>
                       <option value="BOTH">Любое</option>
@@ -585,10 +585,11 @@ function selectStep(step: BotStep) {
   nextStepIdEdit.value = step.nextStepId ?? '';
   // Sync filter words
   if (step.type === 'TRIGGER') {
-    filterWords.value.any = (cfg.value.filter?.anyWords ?? []).join(', ');
-    filterWords.value.all = (cfg.value.filter?.allWords ?? []).join(', ');
     if (!cfg.value.filter) cfg.value.filter = {};
     if (!cfg.value.event) cfg.value.event = 'message_new';
+    if (!cfg.value.filter.direction) cfg.value.filter.direction = 'IN';
+    filterWords.value.any = (cfg.value.filter.anyWords ?? []).join(', ');
+    filterWords.value.all = (cfg.value.filter.allWords ?? []).join(', ');
   }
   // Sync keyboard
   if (step.type === 'SEND_MESSAGE') {
@@ -612,12 +613,6 @@ function selectStep(step: BotStep) {
     if (!cfg.value.value) cfg.value.value = 1;
     if (!cfg.value.unit) cfg.value.unit = 'minutes';
   }
-}
-
-// Reactive helper for filter sub-fields
-function cfgFilter(key: string) {
-  if (!cfg.value.filter) cfg.value.filter = {};
-  return cfg.value.filter[key];
 }
 
 async function saveStep() {
