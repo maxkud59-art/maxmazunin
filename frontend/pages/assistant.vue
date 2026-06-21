@@ -52,9 +52,10 @@ const TABS = [
   { path: '/assistant/orders', label: 'Заказы', icon: '📦' },
   { path: '/assistant/messenger', label: 'Мессенджер', icon: '💬' },
   { path: '/assistant/phrases', label: 'Быстрые фразы', icon: '⚡' },
+  { path: '/assistant/bots', label: 'Боты', icon: '🤖' },
   { path: '/assistant/directories', label: 'Справочники', icon: '📋' },
   { path: '/assistant/broadcasts', label: 'Рассылки', icon: '📢' },
-  { path: '/assistant/ai-settings', label: 'Настройка ИИ', icon: '🤖' },
+  { path: '/assistant/ai-settings', label: 'Настройка ИИ', icon: '✨' },
   { path: '/assistant/settings', label: 'Настройки', icon: '⚙️' },
 ];
 </script>

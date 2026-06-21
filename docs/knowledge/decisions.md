@@ -1,5 +1,22 @@
 # Журнал архитектурных решений
 
+## 2026-06-21 | Боты — визуальный no-code конструктор VK-ботов
+
+**Решение:**
+- `BotsModule` (backend/src/bots/) — NestJS модуль с 4 компонентами: `BotsService`, `BotsController`, `BotEngineService`, `VkBotLongPollService`.
+- 4 новых Prisma-модели: `Bot`, `BotStep`, `ClientScenarioState`, `BotLog`.
+- VK Long Poll запускается `OnModuleInit` если заданы `VK_GROUP_TOKEN`/`VK_GROUP_ID`; loop с `wait=25`, exp back-off, авто-rekey при failed≥2.
+- Движок исполнения: `handleEvent(VkEvent)` → матч триггеров → для RULE выполняет action-steps; для SCENARIO — ищет активное состояние клиента или создаёт новое.
+- DELAY блок: сохраняет `scheduledAt` в `ClientScenarioState`, `@Cron('* * * * *')` возобновляет каждую минуту → restart-safe.
+- Дедупликация событий: in-memory `Set<string>` на 500 записей.
+- Keyboard VK: конфиг `{ inline, one_time, buttons: [[{action: {type,label,payload/link}, color}]] }` сохраняется в `BotStep.config.keyboard`; на отправку → JSON-строка в `messages.send({ keyboard })`.
+- Frontend: `pages/assistant/bots.vue` — список карточек + встроенный редактор (step chain + palette + config panel). `composables/useBotsModule.ts`.
+- Таб «Боты» добавлен в `pages/assistant.vue` между «Быстрые фразы» и «Справочники».
+
+**Причина:** ТЗ от 2026-06-21. Два режима (RULE / SCENARIO) реализуют BlueSales-правила и Senler-воронки соответственно.
+
+---
+
 ## 2026-06-21 | ИИ-ассистент: метки вложений VK + seed быстрых фраз + системный контекст ИИ
 
 **Решение:**

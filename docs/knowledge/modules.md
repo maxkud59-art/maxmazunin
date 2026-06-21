@@ -389,7 +389,7 @@ VkConversation → VkClient (1:1)
 
 ## assistant / ИИ-ассистент (полный модуль)
 
-Страница `/assistant` — родительский layout с левым меню (8 вкладок). Весь раздел под `JwtAuthGuard`.
+Страница `/assistant` — родительский layout с левым меню (9 вкладок). Весь раздел под `JwtAuthGuard`.
 
 ### Вкладки и маршруты
 
@@ -399,6 +399,7 @@ VkConversation → VkClient (1:1)
 | `/assistant/orders` | Заказы вручную: CRUD, привязка к клиенту и статусу заказа, архив вместо удаления |
 | `/assistant/messenger` | 3-колоночный VK-мессенджер с быстрыми фразами (⚡) |
 | `/assistant/phrases` | Быстрые фразы по категориям, вставка в мессенджер |
+| `/assistant/bots` | Визуальный конструктор VK-ботов (правила + сценарии) |
 | `/assistant/directories` | Справочники: CRM-статусы, Теги, Статусы заказов (CRUD + цвет + порядок + архив) |
 | `/assistant/broadcasts` | Рассылки VK: сегмент → предпросмотр → запуск с паузой/отменой, прогресс |
 | `/assistant/ai-settings` | Системный промпт + параметры модели + база знаний (AiKnowledgeEntry) |
@@ -415,6 +416,35 @@ VkConversation → VkClient (1:1)
 | `phrases` | `backend/src/phrases/` | `/api/phrases` — сгруппированные фразы; `/phrases/categories`, `/phrases/phrases` — CRUD |
 | `broadcasts` | `backend/src/broadcasts/` | `/api/broadcasts` — CRUD кампаний; `…/segment-preview`; `…/:id/start/pause/cancel` |
 | `ai-settings` | `backend/src/ai-settings/` | `/api/ai-settings` — GET/PATCH настроек; `/api/ai-settings/knowledge` — CRUD |
+| `bots` | `backend/src/bots/` | `/api/bots` — CRUD ботов и блоков; `/api/bots/:id/logs`; `/api/bots/scenario/add-client` |
+
+### Модуль Боты (добавлен 2026-06-21)
+
+**Два режима:**
+- **RULE** — правило «условия → действия». При каждом VK-событии проверяются триггеры; если совпали — выполняются блоки-действия по порядку.
+- **SCENARIO** — воронка с шагами. Клиент «попадает» в сценарий по триггеру и проходит шаги; состояние хранится в `ClientScenarioState` и переживает рестарт.
+
+**Компоненты:**
+- `BotsService` — CRUD ботов, шагов, дублирование с ремаппингом nextStepId/branches, reorder.
+- `BotEngineService` — движок исполнения. Обрабатывает VkEvent, матчит триггеры, исполняет шаги, управляет состоянием сценариев. `@Cron('* * * * *')` — каждую минуту возобновляет отложенные шаги (DELAY).
+- `VkBotLongPollService` — `OnModuleInit` запускает асинхронный цикл Long Poll (groups.getLongPollServer → poll {server}). Events: `message_new`, `message_event`, `message_allow`, `message_deny`. Экспоненциальный back-off при ошибках. Отключается если `VK_GROUP_TOKEN`/`VK_GROUP_ID` не заданы.
+
+**Типы блоков (BotStepType):**
+`TRIGGER | SEND_MESSAGE | SET_CRM_STATUS | SET_TAGS | SET_ORDER_STATUS | MARK_IMPORTANT | EXTRACT_FIELD | SET_REMINDER | ASSIGN_MANAGER | NOTIFY_MANAGER | LOG_STAT | CONDITION | DELAY | END_SCENARIO | UNSUBSCRIBE | GOTO_STEP`
+
+**Конфиг блоков хранится как JSON** (`BotStep.config`). Гибко — добавление новых типов не требует миграции.
+
+**Клавиатура VK:** inline / нижняя, кнопки text/callback/open_link, цвета primary/secondary/positive/negative. Конструктор в UI. Keyboard JSON сохраняется в `SEND_MESSAGE.config.keyboard` и передаётся как `keyboard` param в `messages.send`.
+
+**Подстановка переменных:** `[Имя]`, `[Фамилия]`, `[Телефон]`, `[Город]`, `[Статус]`, `[startParam]`, `[customVar]` (из vars сценария).
+
+**Вложения:** `[photo123_456]`, `[video789_012]` в тексте → разбираются в attachment-строку VK.
+
+**Идемпотентность:** processedIds Set (500 записей) — дедупликация событий при повторной доставке (failed ts=1).
+
+**Задержки:** DELAY-блок → `ClientScenarioState.scheduledAt = now() + ms`, `status = WAITING_DELAY`. Cron каждую минуту находит просроченные состояния и возобновляет.
+
+**Лимиты VK:** Long Poll wait=25s, экспоненциальный retry до 60s, не блокирует event loop.
 
 ### Prisma-модели (добавлены 2026-06-21)
 
