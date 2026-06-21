@@ -459,7 +459,7 @@ VkConversation → VkClient (1:1)
 | `Order` | id, number (autoincrement), clientId, orderStatusId, amount, items, comment, archived |
 | `PhraseCategory` | id, name, order, archived |
 | `QuickPhrase` | id, categoryId, title, text, hotkey?, order, archived |
-| `Campaign` | id, name, channel, messageText, segmentFilter(json), status(enum), scheduledAt, totalCount, sentCount, errorCount |
+| `Campaign` | id, name, channel, messageText, attachments(json), audienceType(vkIds\|clientIds\|filter), audienceConfig(json), segmentFilter(json), description, status(enum), scheduledAt, totalCount, sentCount, errorCount, archived |
 | `CampaignRecipient` | id, campaignId, peerId, clientName, status(enum PENDING/SENT/ERROR/SKIPPED), sentAt, error |
 | `AiSettings` | singleton id="default", systemPrompt, provider, model, temperature, draftMode |
 | `AiKnowledgeEntry` | id, category, title, content, enabled, order |
@@ -479,12 +479,43 @@ VkConversation → VkClient (1:1)
 - Idempotent: upsert по stable-id `seed_cat_*` / `seed_ph_*`; не удаляет данные.
 - При первом запуске заполняет `AiSettings.systemPrompt` бизнес-контекстом ИЗИБУК.
 
+### Рассылки (BroadcastsModule) — эндпоинты
+
+| Эндпоинт | Описание |
+|----------|---------|
+| `GET /api/broadcasts` | Список кампаний (без архивных) |
+| `GET /api/broadcasts/daily-limit` | Дневной лимит `{limit, sentToday, remaining, vkConfigured, groupId}` |
+| `GET /api/broadcasts/:id` | Кампания с получателями (до 200) |
+| `POST /api/broadcasts` | Создать кампанию |
+| `PATCH /api/broadcasts/:id` | Обновить (только DRAFT/PAUSED/FAILED) |
+| `DELETE /api/broadcasts/:id` | Архивировать (archived=true, данные не удаляются) |
+| `POST /api/broadcasts/audience-preview` | Предпросмотр аудитории для всех 3 типов |
+| `POST /api/broadcasts/:id/start` | Запустить → создаёт CampaignRecipient + фоновый runSend |
+| `POST /api/broadcasts/:id/pause` | Поставить на паузу |
+| `POST /api/broadcasts/:id/cancel` | Отменить (статус FAILED) |
+
+### Рассылки — типы аудитории
+
+| `audienceType` | `audienceConfig` | `segmentFilter` |
+|---|---|---|
+| `vkIds` | `{ vkPeerIds: number[] }` | не используется |
+| `clientIds` | `{ clientIds: string[] }` | не используется |
+| `filter` | `{}` | CRM-фильтры (crmStatusId, tagId, dateFrom, dateTo, search, city, source, ...) |
+
+При `audienceType=filter` — `buildClientWhere(segmentFilter)` фильтрует только клиентов с VK-диалогом.
+
 ### Рассылки — защита от блокировок VK
-- Пауза 1100мс между сообщениями (≈54/мин)
-- Дневной лимит 10 000 в `BroadcastsService.DAILY_LIMIT`
+- Пауза 1100мс между сообщениями (≈54/мин); настраивается через `BROADCAST_DAILY_LIMIT` env
+- Дневной лимит 10 000 (default); настраивается через `BROADCAST_DAILY_LIMIT` env
 - Отправка только клиентам с реальным VK-диалогом (`conversation: { isNot: null }`)
 - Асинхронная (фоновый `runSend`), не блокирует сайт
 - Пауза/отмена через обновление статуса кампании в БД
+- `parseVkMarkers` применяется при отправке → `[Имя]` подставляется + вложения передаются отдельным полем
+
+### Рассылки — кнопка из Клиентов
+- `clients.vue` → кнопка «📢 Создать рассылку» в footer
+- Передаёт текущие фильтры как `?fromFilter=<json>` в `/assistant/broadcasts`
+- `broadcasts.vue` читает `route.query.fromFilter`, открывает форму с audienceType=filter и предзаполненными фильтрами, автоматически показывает предпросмотр аудитории
 
 ### Справочники — дефолты
 При `DirectoriesService.onModuleInit()` — idempotent upsert дефолтных CRM-статусов и статусов заказов. Теги — только вручную.

@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { VkMessengerClient, VkGroupAuthError } from './vk-messenger.client';
 import { VkRealtimeGateway } from './vk-realtime.gateway';
@@ -447,6 +447,10 @@ export class AssistantService {
   // ─── Write ─────────────────────────────────────────────────────────────────
 
   async sendMessage(conversationId: string, text: string): Promise<MessageDto> {
+    if (!this.vk.configured) {
+      throw new BadRequestException('VK_GROUP_TOKEN не настроен. Добавьте токен сообщества с правом messages в .env и перезапустите сервер.');
+    }
+
     const conv = await this.prisma.vkConversation.findUnique({
       where: { id: conversationId },
       include: { client: true },
@@ -459,7 +463,17 @@ export class AssistantService {
 
     const { cleanText, attachment } = parseVkMarkers(text, clientName);
 
-    const vkId = await this.vk.sendMessage(conv.peerId, cleanText, attachment || undefined);
+    let vkId: number;
+    try {
+      vkId = await this.vk.sendMessage(conv.peerId, cleanText, attachment || undefined);
+    } catch (err: any) {
+      this.logger.error('VK messages.send failed for peerId=%d: %s', conv.peerId, err.message);
+      if (err instanceof VkGroupAuthError) {
+        throw new BadRequestException(`Ошибка авторизации VK: ${err.message}`);
+      }
+      const vkMsg = err.message?.startsWith('VK send error:') ? err.message : `Ошибка VK: ${err.message}`;
+      throw new BadRequestException(vkMsg);
+    }
 
     const msg = await this.prisma.vkMessage.create({
       data: {

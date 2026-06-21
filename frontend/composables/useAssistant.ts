@@ -147,7 +147,7 @@ export function useAssistant() {
     getConversationBot: (conversationId: string) =>
       api<AssistantBotInfo>('GET', `/conversations/${conversationId}/bot`),
 
-    setConversationBot: (conversationId: string, botId: string | null, paused?: boolean) =>
+    setConversationBot: (conversationId: string, botId: string | null | undefined, paused?: boolean) =>
       api<AssistantBotInfo>('PATCH', `/conversations/${conversationId}/bot`, { botId, paused }),
 
     getReminders: () =>

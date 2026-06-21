@@ -210,11 +210,18 @@
       <div v-if="loading && items.length" class="load-more-spinner"><span class="spinner"></span></div>
     </div>
 
-    <!-- Pagination -->
-    <div v-if="total > 0" class="pagination">
-      <button class="pg-btn" :disabled="page === 0" @click="goPage(page - 1)">← Пред</button>
-      <span class="pg-info">Стр. {{ page + 1 }} из {{ totalPages }} · {{ total }} клиентов</span>
-      <button class="pg-btn" :disabled="page >= totalPages - 1" @click="goPage(page + 1)">След →</button>
+    <!-- Pagination + broadcast action -->
+    <div class="clients-footer">
+      <div v-if="total > 0" class="pagination">
+        <button class="pg-btn" :disabled="page === 0" @click="goPage(page - 1)">← Пред</button>
+        <span class="pg-info">Стр. {{ page + 1 }} из {{ totalPages }} · {{ total }} клиентов</span>
+        <button class="pg-btn" :disabled="page >= totalPages - 1" @click="goPage(page + 1)">След →</button>
+      </div>
+      <div class="footer-actions">
+        <button class="btn-broadcast" :disabled="total === 0" @click="createBroadcast" :title="total === 0 ? 'Нет клиентов для рассылки' : `Создать рассылку по ${total} клиентам`">
+          📢 Создать рассылку{{ total > 0 ? ` (${total})` : '' }}
+        </button>
+      </div>
     </div>
 
     <!-- Client modal -->
@@ -606,6 +613,21 @@ function goToMessenger(_c: any) {
   closeModal();
 }
 
+function createBroadcast() {
+  const a = applied.value;
+  const filter: Record<string, any> = {};
+  if (a.crmStatusIds.length) filter.crmStatusIds = a.crmStatusIds.join(',');
+  if (a.tagIds.length) { filter.tagIds = a.tagIds.join(','); filter.tagMatch = a.tagMatch; }
+  if (a.firstContactFrom) filter.dateFrom = a.firstContactFrom;
+  if (a.firstContactTo) filter.dateTo = a.firstContactTo;
+  if (a.search) filter.search = a.search;
+  if (a.city) filter.city = a.city;
+  if (a.source) filter.source = a.source;
+
+  const fromFilter = encodeURIComponent(JSON.stringify(filter));
+  router.push(`/assistant/broadcasts?fromFilter=${fromFilter}`);
+}
+
 function displayName(c: any) {
   if (c.firstName) return `${c.firstName} ${c.lastName ?? ''}`.trim();
   if (c.fio) return c.fio;
@@ -701,10 +723,15 @@ function formatAmount(n: number) {
 .action-btn { background: #6366f1; color: #fff; border: none; border-radius: 6px; padding: 5px 10px; font-size: 12px; cursor: pointer; }
 .action-btn:hover { background: #4f46e5; }
 
-.pagination { display: flex; align-items: center; gap: 12px; padding: 10px 20px; flex-shrink: 0; }
+.clients-footer { display: flex; align-items: center; justify-content: space-between; padding: 10px 20px; border-top: 1px solid #e5e7eb; flex-shrink: 0; flex-wrap: wrap; gap: 8px; }
+.pagination { display: flex; align-items: center; gap: 12px; }
 .pg-btn { border: 1px solid #d1d5db; background: #fff; border-radius: 8px; padding: 6px 14px; font-size: 13px; cursor: pointer; }
 .pg-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .pg-info { font-size: 13px; color: #64748b; }
+.footer-actions { display: flex; align-items: center; gap: 8px; }
+.btn-broadcast { background: #0f766e; color: #fff; border: none; border-radius: 8px; padding: 8px 16px; font-size: 13px; cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.btn-broadcast:hover:not(:disabled) { background: #115e59; }
+.btn-broadcast:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .state-loading, .state-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 60px 20px; color: #94a3b8; font-size: 14px; }
 .state-empty-icon { font-size: 48px; }

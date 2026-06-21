@@ -1,5 +1,28 @@
 # Известные проблемы и фиксы
 
+## 2026-06-21 | Мессенджер: сообщения не уходят — VK_GROUP_TOKEN пустой
+
+**Симптом:** Из мессенджера (/assistant/messenger) нажать «Отправить» — сообщение не уходит. В логах PM2 нет явных ошибок VK. `VK_TOKEN_LEN=0`.
+
+**Причина:** `VK_GROUP_TOKEN` не задан в `.env` на сервере. `VkMessengerClient.configured` = false, при попытке отправки VK возвращает error_code 5 (auth) → backend бросал 500, frontend глотал через `console.error` — пользователь не видел ошибки.
+
+**Фикс:**
+1. Получить токен сообщества VK с правом `messages`:
+   - VK → Управление сообществом → Настройки → Работа с API → Ключи доступа → Создать ключ.
+   - Галка: **Сообщения сообщества**.
+2. `nano /home/deploy/maxmazunin/.env` → добавить/заменить: `VK_GROUP_TOKEN=<токен>`.
+3. `pm2 restart cabinet-backend` (env читается при старте).
+4. В мессенджере нажать «⚙️ Проверить токен» или послать тестовое сообщение.
+
+**Что исправлено в коде (2026-06-21):**
+- `AssistantService.sendMessage()`: проверяет `!configured` → бросает `BadRequestException` с читаемым текстом вместо 500.
+- Все VK-ошибки логируются через `logger.error` перед пробросом → видны в `pm2 logs cabinet-backend`.
+- `messenger.vue`: ошибка отправки показывается под полем ввода (красный текст) — не тихий fail.
+
+**Токен хранится в .env, не коммитить!**
+
+---
+
 ## 2026-06-21 | Боты: Long Poll «longpoll for this group is not enabled»
 
 **Симптом:** `VkBotLongPollService` логирует: `VK getLongPollServer: One of the parameters specified was missing or invalid: longpoll for this group is not enabled`. Повторяется с exp back-off (3s→6s→12s→…→60s).

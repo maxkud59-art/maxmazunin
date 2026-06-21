@@ -175,6 +175,7 @@
             <input v-model="attachUrl" placeholder="URL или VK owner_id (напр. -12345_678)" class="attach-url" />
             <button class="attach-ok" @click="doInsertAttachment">Вставить</button>
           </div>
+          <div v-if="sendError" class="send-error">{{ sendError }}</div>
           <div class="input-row">
             <textarea
               ref="inputRef"
@@ -408,7 +409,7 @@ async function openConv(c: AssistantConversation) {
   scrollToBottom();
 }
 
-async function openByConvId(convId: string | null) {
+async function openByConvId(convId: string | null | undefined) {
   if (!convId) return;
   const c = conversations.value.find((x) => x.id === convId);
   if (c) await openConv(c);
@@ -453,6 +454,7 @@ function scrollToBottom() {
 // ─── Send message ─────────────────────────────────────────────────────────────
 const msgText = ref('');
 const sending = ref(false);
+const sendError = ref('');
 const inputRef = ref<HTMLTextAreaElement>();
 const attachPanel = ref(false);
 const attachType = ref('photo');
@@ -461,12 +463,19 @@ const attachUrl = ref('');
 async function sendMsg() {
   if (!activeConv.value || !msgText.value.trim() || sending.value) return;
   sending.value = true;
+  sendError.value = '';
   try {
     const msg = await assistant.sendMessage(activeConv.value.id, msgText.value);
     messages.value.push(msg as any);
     msgText.value = '';
     scrollToBottom();
-  } catch (e) {
+  } catch (e: any) {
+    const detail =
+      e?.data?.message ??
+      e?.response?.data?.message ??
+      e?.message ??
+      'Не удалось отправить сообщение';
+    sendError.value = typeof detail === 'string' ? detail : JSON.stringify(detail);
     console.error('sendMsg error', e);
   } finally {
     sending.value = false;
@@ -795,15 +804,16 @@ onUnmounted(() => {
 });
 
 // Custom directive v-click-outside
+type ElWithHandler = HTMLElement & { _coHandler?: (e: MouseEvent) => void };
 const vClickOutside = {
-  mounted(el: HTMLElement, binding: any) {
-    el._clickOutsideHandler = (e: MouseEvent) => {
+  mounted(el: ElWithHandler, binding: any) {
+    el._coHandler = (e: MouseEvent) => {
       if (!el.contains(e.target as Node)) binding.value(e);
     };
-    document.addEventListener('click', el._clickOutsideHandler);
+    document.addEventListener('click', el._coHandler);
   },
-  unmounted(el: any) {
-    document.removeEventListener('click', el._clickOutsideHandler);
+  unmounted(el: ElWithHandler) {
+    if (el._coHandler) document.removeEventListener('click', el._coHandler);
   },
 };
 </script>
@@ -1081,6 +1091,7 @@ const vClickOutside = {
   border-radius: 5px; padding: 4px 10px; font-size: 12px; cursor: pointer;
 }
 
+.send-error { color: #dc2626; font-size: 12px; padding: 4px 2px 2px; }
 .input-row { display: flex; gap: 8px; align-items: flex-end; }
 .msg-textarea {
   flex: 1; border: 1px solid #cbd5e1; border-radius: 8px;

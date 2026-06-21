@@ -1,5 +1,36 @@
 # Журнал архитектурных решений
 
+## 2026-06-21 | Мессенджер — рабочий стол оператора (realtime, 3-панели, боты, карточка)
+
+**Решение:**
+- Schema: добавлены `VkConversation.assignedBotId TEXT`, `VkConversation.botPaused BOOLEAN DEFAULT false`, `VkClient.email`, `birthDate`, `country`, `nextContactDate`, `lastContactAt` — через SQL `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`.
+- `VkRealtimeGateway` (assistant/vk-realtime.gateway.ts) — Socket.IO namespace `/assistant-realtime`, JWT auth on connect, метод `broadcast(event, data)` для push-уведомлений.
+- `AssistantService`: добавлены `handleIncomingMessage()` (sync incoming VK msg → DB → WebSocket push), `setConversationBot()`, `getConversationBotInfo()`, `getReminders()` (клиенты с nextContactDate ≤ +7 дней).
+- `AssistantController`: новые endpoints `PATCH /conversations/:id/bot`, `GET /conversations/:id/bot`, `GET /reminders`.
+- `VkBotLongPollService`: при `message_new` вызывает `assistantService.handleIncomingMessage()` — incoming message сохраняется в БД и пушится в браузер via WebSocket.
+- `BotEngineService._dispatch()`: проверяет `VkConversation.assignedBotId` / `botPaused` — если бот назначен и не на паузе, запускает только его; если на паузе — не запускает ничего; если не назначен — старое поведение (все enabled-боты).
+- `AssistantModule`: добавлен `JwtModule`, экспортирует `AssistantService`, `VkMessengerClient`, `VkRealtimeGateway`.
+- `BotsModule`: импортирует `AssistantModule` (убрал локальный `VkMessengerClient`).
+- Frontend: `composables/useVkRealtime.ts` — singleton Socket.IO клиент к `/assistant-realtime`; `composables/useAssistant.ts` расширен (bot methods, reminders, updateClient, orders, phrases); `pages/assistant.vue` поддерживает `messengerFullscreen` (useState, скрывает nav); `pages/assistant/messenger.vue` — полный редизайн: 3 панели (конвс+фразы+напоминания / сообщения / карточка+заказы), bot-assign dropdown, fullscreen-кнопка, realtime через Socket.IO.
+
+**Причина:** ТЗ 2026-06-21 — рабочий стол оператора BlueSales-стиль; realtime при входящих от VK (секунды задержки).
+
+---
+
+## 2026-06-21 | Рассылки — BlueSales-стиль, 3 типа аудитории, архив
+
+**Решение:**
+- Prisma: к `Campaign` добавлены поля `audienceType String @default("filter")`, `audienceConfig Json @default("{}")`, `archived Boolean @default(false)`, `description String @default("")`. Миграция `20260621_campaign_audience_archived`.
+- `BroadcastsService`: `startCampaign` поддерживает 3 типа аудитории: `vkIds` (список VK peer ID), `clientIds` (cuid клиентов), `filter` (CRM-фильтры из `segmentFilter`). `audiencePreview` — предпросмотр для всех трёх.
+- `BroadcastsController`: добавлены `DELETE /:id` (архив), `GET /daily-limit`, `POST /audience-preview`.
+- Дневной лимит вынесен в `process.env.BROADCAST_DAILY_LIMIT` (default 10 000).
+- Frontend `broadcasts.vue` полностью переписан: таблица с колонками (checkbox, edit, название, создана, дата запуска, канал-badge, аудитория-link, статистика, статус-badge, описание), пагинация 10/25/50/100, сортировки, форма с 3 tabbed-аудиториями, поля-подстановки `[Имя]/[Заказ.Сумма]`, вложения-маркеры, предпросмотр подстановки, доп. настройки, отложенный запуск.
+- `clients.vue`: кнопка «📢 Создать рассылку» в footer передаёт текущие CRM-фильтры через `?fromFilter=<json>` → `broadcasts.vue` открывает форму с предзаполненной аудиторией.
+
+**Причина:** ТЗ 2026-06-21. Привести модуль к виду BlueSales; удаление через архив, а не физическое.
+
+---
+
 ## 2026-06-21 | Боты — визуальный no-code конструктор VK-ботов
 
 **Решение:**

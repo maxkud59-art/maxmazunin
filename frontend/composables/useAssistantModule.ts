@@ -63,18 +63,25 @@ export interface QuickPhrase {
   archived: boolean;
 }
 
+export type AudienceType = 'vkIds' | 'clientIds' | 'filter';
+
 export interface Campaign {
   id: string;
   name: string;
   channel: string;
   messageText: string;
+  attachments: any[];
+  audienceType: AudienceType;
+  audienceConfig: any;
   segmentFilter: any;
+  description: string;
   status: 'DRAFT' | 'SCHEDULED' | 'SENDING' | 'DONE' | 'PAUSED' | 'FAILED';
   scheduledAt: string | null;
   createdAt: string;
   totalCount: number;
   sentCount: number;
   errorCount: number;
+  archived: boolean;
 }
 
 export interface CampaignDetail extends Campaign {
@@ -88,6 +95,20 @@ export interface CampaignRecipient {
   status: 'PENDING' | 'SENT' | 'ERROR' | 'SKIPPED';
   sentAt: string | null;
   error: string | null;
+}
+
+export interface DailyLimitInfo {
+  sentToday: number;
+  ratePerSec: number;
+  delayMs: number;
+  vkConfigured: boolean;
+  groupId: number | null;
+}
+
+export interface AudiencePreviewResult {
+  count: number;
+  sample: Array<{ id?: string; name: string }>;
+  knownClients?: number;
 }
 
 export interface AiSettings {
@@ -170,7 +191,10 @@ export function useAssistantModule() {
     getCampaign: (id: string) => api<CampaignDetail>('GET', `/broadcasts/${id}`),
     createCampaign: (data: any) => api<Campaign>('POST', '/broadcasts', data),
     updateCampaign: (id: string, data: any) => api<Campaign>('PATCH', `/broadcasts/${id}`, data),
-    previewSegment: (filter: any) => api<{ count: number; sample: any[] }>('POST', '/broadcasts/segment-preview', filter),
+    archiveCampaign: (id: string) => api<any>('DELETE', `/broadcasts/${id}`),
+    getDailyLimit: () => api<DailyLimitInfo>('GET', '/broadcasts/daily-limit'),
+    audiencePreview: (data: any) => api<AudiencePreviewResult>('POST', '/broadcasts/audience-preview', data),
+    previewSegment: (filter: any) => api<AudiencePreviewResult>('POST', '/broadcasts/segment-preview', filter),
     startCampaign: (id: string) => api<any>('POST', `/broadcasts/${id}/start`),
     pauseCampaign: (id: string) => api<any>('POST', `/broadcasts/${id}/pause`),
     cancelCampaign: (id: string) => api<any>('POST', `/broadcasts/${id}/cancel`),
