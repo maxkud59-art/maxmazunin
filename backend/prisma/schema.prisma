@@ -340,6 +340,8 @@ model VkConversation {
   lastMessageAt   DateTime  @default(now())
   unreadCount     Int       @default(0)
   crmStatus       String?
+  assignedBotId   String?
+  botPaused       Boolean   @default(false)
   updatedAt       DateTime  @updatedAt
 
   messages  VkMessage[]
@@ -365,20 +367,25 @@ model VkMessage {
 }
 
 model VkClient {
-  id             String         @id @default(cuid())
-  peerId         Int            @unique
-  fio            String?
-  firstName      String?
-  lastName       String?
-  vkUrl          String?
-  avatar         String?
-  phone          String?
-  city           String?
-  source         String?
-  note           String?
-  tags           Json           @default("[]")
-  firstContactAt DateTime?
-  crmStatusId    String?
+  id              String         @id @default(cuid())
+  peerId          Int            @unique
+  fio             String?
+  firstName       String?
+  lastName        String?
+  vkUrl           String?
+  avatar          String?
+  phone           String?
+  email           String?
+  birthDate       DateTime?
+  country         String?
+  city            String?
+  source          String?
+  note            String?
+  tags            Json           @default("[]")
+  firstContactAt  DateTime?
+  nextContactDate DateTime?
+  lastContactAt   DateTime?
+  crmStatusId     String?
 
   conversation    VkConversation        @relation(fields: [peerId], references: [peerId])
   crmStatus       CrmStatus?            @relation(fields: [crmStatusId], references: [id])
@@ -387,6 +394,9 @@ model VkClient {
   scenarioStates  ClientScenarioState[]
 
   @@index([firstContactAt])
+  @@index([nextContactDate])
+  @@index([crmStatusId])
+  @@index([phone])
 }
 
 // ─── ИИ-ассистент: Справочники ────────────────────────────────────────────────
@@ -485,19 +495,26 @@ enum RecipientStatus {
 }
 
 model Campaign {
-  id            String         @id @default(cuid())
-  name          String
-  channel       String         @default("VK")
-  messageText   String
-  attachments   Json           @default("[]")
-  segmentFilter Json           @default("{}")
-  status        CampaignStatus @default(DRAFT)
-  scheduledAt   DateTime?
-  createdAt     DateTime       @default(now())
-  totalCount    Int            @default(0)
-  sentCount     Int            @default(0)
-  errorCount    Int            @default(0)
-  recipients    CampaignRecipient[]
+  id             String         @id @default(cuid())
+  name           String
+  channel        String         @default("VK")
+  messageText    String
+  attachments    Json           @default("[]")
+  segmentFilter  Json           @default("{}")
+  audienceType   String         @default("filter")
+  audienceConfig Json           @default("{}")
+  status         CampaignStatus @default(DRAFT)
+  scheduledAt    DateTime?
+  createdAt      DateTime       @default(now())
+  totalCount     Int            @default(0)
+  sentCount      Int            @default(0)
+  errorCount     Int            @default(0)
+  archived       Boolean        @default(false)
+  description    String         @default("")
+  recipients     CampaignRecipient[]
+
+  @@index([status, archived])
+  @@index([createdAt])
 }
 
 model CampaignRecipient {

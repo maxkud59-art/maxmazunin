@@ -47,10 +47,36 @@ export class BotEngineService {
   }
 
   private async _dispatch(ev: VkEvent) {
-    const bots = await this.prisma.bot.findMany({
-      where: { enabled: true, archived: false },
-      include: { steps: { orderBy: { position: 'asc' } } },
+    // Check per-dialog bot assignment
+    const conv = await this.prisma.vkConversation.findUnique({
+      where: { peerId: ev.peerId },
+      select: { assignedBotId: true, botPaused: true } as any,
     });
+
+    const assignedBotId = (conv as any)?.assignedBotId as string | null | undefined;
+    const botPaused = (conv as any)?.botPaused as boolean | undefined;
+
+    let bots: BotWithSteps[];
+
+    if (assignedBotId) {
+      if (botPaused) {
+        // Bot paused for this dialog — run nothing
+        return;
+      }
+      // Only run the assigned bot
+      const bot = await this.prisma.bot.findUnique({
+        where: { id: assignedBotId },
+        include: { steps: { orderBy: { position: 'asc' } } },
+      });
+      bots = (bot && bot.enabled && !bot.archived) ? [bot] : [];
+    } else {
+      // No assignment — run all enabled bots (default behavior)
+      bots = await this.prisma.bot.findMany({
+        where: { enabled: true, archived: false },
+        include: { steps: { orderBy: { position: 'asc' } } },
+      });
+    }
+
     if (!bots.length) return;
 
     // Resolve or create VkClient for this peerId

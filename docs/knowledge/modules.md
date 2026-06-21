@@ -395,7 +395,7 @@ VkConversation → VkClient (1:1)
 
 | Маршрут | Описание |
 |---------|---------|
-| `/assistant/clients` | Список VK-клиентов с CRM-статусом, тегами, поиском, пагинацией 30/50/100/500/1000 |
+| `/assistant/clients` | Список VK-клиентов с CRM-статусом, тегами, коллапсируемой панелью фильтров (2 вкладки: по клиентам / по заказам), пагинацией 30/50/100/500/1000 |
 | `/assistant/orders` | Заказы вручную: CRUD, привязка к клиенту и статусу заказа, архив вместо удаления |
 | `/assistant/messenger` | 3-колоночный VK-мессенджер с быстрыми фразами (⚡) |
 | `/assistant/phrases` | Быстрые фразы по категориям, вставка в мессенджер |
@@ -411,7 +411,7 @@ VkConversation → VkClient (1:1)
 |--------|-------|-----------|
 | `assistant` | `backend/src/assistant/` | `/api/assistant/conversations`, `…/messages`, `…/send`, `…/clients/:peerId`, `sync`, `token-health` |
 | `directories` | `backend/src/directories/` | `/api/directories/crm-statuses`, `…/tags`, `…/order-statuses` — CRUD (GET/POST/PATCH) |
-| `clients` | `backend/src/clients/` | `/api/clients` — список с фильтрами; `/api/clients/:id` — карточка + PATCH |
+| `clients` | `backend/src/clients/` | `/api/clients` — список с расширенными фильтрами (search, phone, city, vkUrl, email, crmStatusIds, tagIds+tagMatch, dateRanges, peerIds, ids, orderFilters); `/api/clients/:id` — карточка + PATCH |
 | `orders` | `backend/src/orders/` | `/api/orders` — CRUD + DELETE (архивация); пагинация + фильтры |
 | `phrases` | `backend/src/phrases/` | `/api/phrases` — сгруппированные фразы; `/phrases/categories`, `/phrases/phrases` — CRUD |
 | `broadcasts` | `backend/src/broadcasts/` | `/api/broadcasts` — CRUD кампаний; `…/segment-preview`; `…/:id/start/pause/cancel` |
@@ -448,7 +448,7 @@ VkConversation → VkClient (1:1)
 
 ### Prisma-модели (добавлены 2026-06-21)
 
-**Расширение VkClient:** firstName, lastName, vkUrl, avatar, firstContactAt, crmStatusId (FK→CrmStatus), tagLinks (M2M)
+**VkClient поля:** firstName, lastName, fio, vkUrl, avatar, phone, email, city, country, source, note, birthDate, firstContactAt, nextContactDate, lastContactAt, crmStatusId (FK→CrmStatus), tagLinks (M2M). Индексы: firstContactAt, nextContactDate, crmStatusId, phone.
 
 | Модель | Ключевые поля |
 |--------|--------------|

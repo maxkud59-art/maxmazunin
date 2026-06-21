@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Param, Query, Body, UseGuards, ParseIntPipe,
+  Controller, Get, Post, Patch, Param, Query, Body, UseGuards, ParseIntPipe,
 } from '@nestjs/common';
 import {
   ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags,
@@ -12,6 +12,8 @@ import { AssistantService } from './assistant.service';
 import { ConversationListDto } from './dto/conversation.dto';
 import { MessageListDto, SendMessageDto, MessageDto } from './dto/message.dto';
 import { ClientDto } from './dto/client.dto';
+import { SetConversationBotDto, ConversationBotDto } from './dto/bot-assignment.dto';
+import { ReminderDto } from './dto/reminder.dto';
 
 @ApiTags('assistant')
 @ApiBearerAuth()
@@ -53,6 +55,30 @@ export class AssistantController {
     @Body() body: SendMessageDto,
   ) {
     return this.svc.sendMessage(id, body.text);
+  }
+
+  @Get('conversations/:id/bot')
+  @ApiOperation({ summary: 'Получить назначенного бота для диалога' })
+  @ApiResponse({ status: 200, type: ConversationBotDto })
+  getConversationBot(@Param('id') id: string) {
+    return this.svc.getConversationBotInfo(id);
+  }
+
+  @Patch('conversations/:id/bot')
+  @ApiOperation({ summary: 'Назначить/снять/поставить на паузу бота для диалога' })
+  @ApiResponse({ status: 200, type: ConversationBotDto })
+  setConversationBot(
+    @Param('id') id: string,
+    @Body() body: SetConversationBotDto,
+  ) {
+    return this.svc.setConversationBot(id, body.botId, body.paused);
+  }
+
+  @Get('reminders')
+  @ApiOperation({ summary: 'Напоминания: клиенты с ближайшей датой след. контакта' })
+  @ApiResponse({ status: 200, type: [ReminderDto] })
+  getReminders(): Promise<ReminderDto[]> {
+    return this.svc.getReminders();
   }
 
   @Get('clients/:peerId')

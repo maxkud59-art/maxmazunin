@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import EmojiPicker from 'vue3-emoji-picker';
+// @ts-ignore
 import 'vue3-emoji-picker/css';
 import {
   ArrowLeft, Send, Paperclip, Smile, Plus, X, CornerUpLeft,

@@ -320,7 +320,7 @@
                 <div class="cfg-row">
                   <label class="cfg-label">Ветки (True / False)</label>
                   <div v-for="(branch, bi) in cfg.branches" :key="bi" class="branch-row">
-                    <span class="branch-label">{{ branch.label || 'Ветка ' + (bi + 1) }}</span>
+                    <span class="branch-label">{{ branch.label || `Ветка ${Number(bi) + 1}` }}</span>
                     <input v-model="branch.condition" class="cfg-input-sm" placeholder="yes / no / value" />
                     <select v-model="branch.stepId" class="cfg-select-sm">
                       <option value="">— завершить —</option>

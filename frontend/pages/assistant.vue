@@ -9,8 +9,8 @@
     <!-- Mobile drawer backdrop -->
     <div v-if="drawerOpen" class="drawer-backdrop" @click="drawerOpen = false" />
 
-    <!-- Left navigation -->
-    <nav class="ai-nav" :class="{ open: drawerOpen }">
+    <!-- Left navigation (hidden when messenger is fullscreen) -->
+    <nav v-show="!messengerFullscreen" class="ai-nav" :class="{ open: drawerOpen }">
       <div class="nav-header">
         <span class="nav-brand">ИИ-ассистент</span>
         <button class="nav-close" @click="drawerOpen = false">✕</button>
@@ -46,6 +46,8 @@ import { ref } from 'vue';
 definePageMeta({ middleware: ['auth'] });
 
 const drawerOpen = ref(false);
+// Shared state: messenger hides the nav when in fullscreen mode
+const messengerFullscreen = useState('messengerFullscreen', () => false);
 
 const TABS = [
   { path: '/assistant/clients', label: 'Клиенты', icon: '👥' },

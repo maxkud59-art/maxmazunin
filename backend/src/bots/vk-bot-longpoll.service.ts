@@ -11,6 +11,7 @@ import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/commo
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { BotEngineService, VkEvent } from './bot-engine.service';
+import { AssistantService } from '../assistant/assistant.service';
 
 const VK_API = 'https://api.vk.com/method';
 const V = '5.199';
@@ -26,6 +27,7 @@ export class VkBotLongPollService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly config: ConfigService,
     private readonly engine: BotEngineService,
+    private readonly assistantService: AssistantService,
   ) {
     this.token = config.get<string>('VK_GROUP_TOKEN', '');
     this.groupId = Number(config.get<string>('VK_GROUP_ID', '0'));
@@ -106,6 +108,17 @@ export class VkBotLongPollService implements OnModuleInit, OnModuleDestroy {
     if (type === 'message_new') {
       const msg = obj.message ?? obj; // v5.199 has obj.message
       const peerId: number = msg.peer_id ?? msg.from_id;
+
+      // Sync incoming message to DB and push to browsers via WebSocket
+      this.assistantService.handleIncomingMessage({
+        peerId,
+        vkMessageId: msg.id,
+        text: msg.text ?? '',
+        attachments: msg.attachments ?? [],
+        date: msg.date,
+        fromId: msg.from_id,
+      }).catch((e) => this.logger.error('handleIncomingMessage error: %s', e.message));
+
       ev = {
         type: 'message_new',
         peerId,

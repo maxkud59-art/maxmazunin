@@ -1,548 +1,1193 @@
 <template>
-  <div class="messenger-page">
-    <!-- Token error banner -->
-    <div v-if="tokenError" class="token-banner">
-      <span>⚠️ {{ tokenError }}</span>
-      <span class="token-hint">Обновите <code>VK_GROUP_TOKEN</code> и <code>VK_GROUP_ID</code> в .env на сервере → <code>pm2 restart cabinet-backend</code></span>
-    </div>
+  <div class="mgr" :class="{ 'mgr--fs': fullscreen }">
 
-    <!-- Three-column layout -->
-    <div class="messenger-layout" :class="{ 'mobile-thread': mobileView === 'thread', 'mobile-client': mobileView === 'client' }">
-      <!-- LEFT: conversation list -->
-      <aside class="conv-sidebar">
-        <div class="conv-header">
-          <div class="conv-title-row">
-            <h2 class="conv-title">Диалоги VK</h2>
-            <button class="sync-btn" :class="{ spinning: syncing }" @click="doSync" title="Синхронизировать">↻</button>
-          </div>
-          <div class="filter-tabs">
-            <button v-for="f in FILTERS" :key="f.id" class="filter-tab" :class="{ active: activeFilter === f.id }" @click="setFilter(f.id)">{{ f.label }}</button>
-          </div>
-          <input v-model="searchQuery" class="conv-search" placeholder="Поиск..." @input="onSearch" />
+    <!-- ═══ LEFT PANEL ═══════════════════════════════════════════════════════ -->
+    <div class="mgr-left">
+
+      <!-- Search + filter -->
+      <div class="left-header">
+        <input v-model="search" placeholder="Поиск диалогов..." class="conv-search" @input="onSearchInput" />
+        <div class="filter-row">
+          <button v-for="f in FILTERS" :key="f.v" :class="['filter-btn', { active: filter === f.v }]" @click="setFilter(f.v)">{{ f.l }}</button>
         </div>
+      </div>
 
-        <div class="conv-list" ref="convListEl" @scroll="onConvScroll">
-          <div v-if="convLoading && !conversations.length" class="conv-loading"><span class="spinner"></span> Загрузка...</div>
-          <div v-else-if="!conversations.length && !convLoading" class="conv-empty">
-            <div>{{ tokenError ? '🔑 Токен не настроен' : '💬 Диалогов нет' }}</div>
+      <!-- Conversation list -->
+      <div class="conv-list" ref="convListRef">
+        <div v-if="convsLoading && !conversations.length" class="list-loading">Загрузка...</div>
+        <div
+          v-for="c in conversations"
+          :key="c.id"
+          :class="['conv-item', { active: activeConv?.id === c.id, unread: c.unreadCount > 0 }]"
+          @click="openConv(c)"
+        >
+          <div class="conv-avatar-wrap">
+            <img v-if="c.clientAvatar" :src="c.clientAvatar" class="conv-avatar" />
+            <div v-else class="conv-avatar-placeholder">{{ c.clientName?.[0] ?? '?' }}</div>
+            <span v-if="c.unreadCount > 0" class="conv-badge">{{ c.unreadCount > 99 ? '99+' : c.unreadCount }}</span>
           </div>
-          <div
-            v-for="conv in conversations"
-            :key="conv.id"
-            class="conv-item"
-            :class="{ active: activeConv?.id === conv.id }"
-            @click="selectConv(conv)"
-          >
-            <div class="conv-avatar">
-              <img v-if="conv.clientAvatar" :src="conv.clientAvatar" alt="" />
-              <span v-else class="conv-avatar-placeholder">{{ initials(conv.clientName) }}</span>
-              <span v-if="conv.unreadCount" class="unread-badge">{{ conv.unreadCount }}</span>
+          <div class="conv-body">
+            <div class="conv-name-row">
+              <span class="conv-name">{{ c.clientName }}</span>
+              <span class="conv-time">{{ fmtTime(c.lastMessageAt) }}</span>
             </div>
-            <div class="conv-info">
-              <div class="conv-name-row">
-                <span class="conv-name">{{ conv.clientName }}</span>
-                <span class="conv-time">{{ formatTime(conv.lastMessageAt) }}</span>
+            <div class="conv-last">{{ c.lastMessageText }}</div>
+            <div v-if="c.assignedBotId" class="conv-bot-badge" :class="{ paused: c.botPaused }">
+              🤖 {{ c.assignedBotName || 'Бот' }}{{ c.botPaused ? ' ⏸' : '' }}
+            </div>
+          </div>
+        </div>
+        <button v-if="canLoadMore" class="load-more-btn" @click="loadMoreConvs">Ещё...</button>
+      </div>
+
+      <!-- Quick phrases -->
+      <div class="left-section">
+        <div class="section-header" @click="phrasesOpen = !phrasesOpen">
+          <span>⚡ Быстрые фразы</span>
+          <span class="section-arrow">{{ phrasesOpen ? '▲' : '▼' }}</span>
+        </div>
+        <transition name="slide">
+          <div v-if="phrasesOpen" class="phrases-wrap">
+            <div v-for="cat in phraseCategories" :key="cat.id" class="phrase-cat">
+              <div class="phrase-cat-hdr" @click="toggleCat(cat.id)">
+                <span>{{ cat.name }}</span>
+                <span>{{ openCats.has(cat.id) ? '▲' : '▼' }}</span>
               </div>
-              <div class="conv-preview">{{ conv.lastMessageText || '...' }}</div>
-            </div>
-          </div>
-          <div v-if="convLoading && conversations.length" class="conv-loading-more"><span class="spinner-sm"></span></div>
-        </div>
-      </aside>
-
-      <!-- CENTER: message thread -->
-      <main class="thread-pane">
-        <div v-if="activeConv" class="thread-header">
-          <button class="back-btn" @click="mobileView = 'list'">←</button>
-          <div class="thread-avatar">
-            <img v-if="activeConv.clientAvatar" :src="activeConv.clientAvatar" alt="" />
-            <span v-else>{{ initials(activeConv.clientName) }}</span>
-          </div>
-          <div class="thread-name">{{ activeConv.clientName }}</div>
-          <button class="client-card-btn" @click="mobileView = 'client'">👤</button>
-        </div>
-
-        <div v-if="!activeConv" class="thread-empty">
-          <div class="thread-empty-icon">💬</div>
-          <div>Выберите диалог слева</div>
-        </div>
-
-        <template v-else>
-          <div class="thread-messages" ref="threadEl" @scroll="onThreadScroll">
-            <div v-if="msgLoadingMore" class="msg-loading-more"><span class="spinner-sm"></span></div>
-            <template v-for="(msg, idx) in messages" :key="msg.id">
-              <div v-if="showDateSep(idx)" class="date-sep">{{ formatDate(msg.createdAt) }}</div>
-              <div class="msg-row" :class="msg.direction === 'OUT' ? 'msg-out' : 'msg-in'">
-                <div class="bubble">
-                  <div v-if="msg.text" class="bubble-text">{{ msg.text }}</div>
-                  <template v-for="(att, ai) in msg.attachments" :key="ai">
-                    <a v-if="att.url && (att.type === 'photo' || att.type === 'video' || att.type === 'doc')" :href="att.url" target="_blank" class="att-link">
-                      <img v-if="att.thumb || (att.type === 'photo' && att.url)" :src="att.thumb ?? att.url" class="att-img" />
-                      <span v-else>{{ att.title || att.type }}</span>
-                    </a>
-                    <div v-else-if="att.type === 'link'" class="att-link-text"><a :href="att.url ?? '#'" target="_blank">🔗 {{ att.title || att.url }}</a></div>
-                    <div v-else class="att-generic">📎 {{ att.type }}{{ att.title ? ': ' + att.title : '' }}</div>
-                  </template>
-                  <div class="bubble-meta">{{ formatMsgTime(msg.createdAt) }}</div>
-                </div>
-              </div>
-            </template>
-            <div v-if="msgLoading && !messages.length" class="msg-loading"><span class="spinner"></span></div>
-          </div>
-
-          <!-- Quick phrases panel -->
-          <div v-if="phrasePanelOpen" class="phrase-panel">
-            <div class="phrase-panel-header">
-              <span>⚡ Быстрые фразы</span>
-              <button @click="phrasePanelOpen = false">✕</button>
-            </div>
-            <div class="phrase-panel-body">
-              <div v-if="!phraseCategories.length" class="phrase-empty">Нет фраз. Добавьте в разделе «Быстрые фразы».</div>
-              <div v-for="cat in phraseCategories" :key="cat.id" class="phrase-cat">
-                <div class="phrase-cat-name">{{ cat.name }}</div>
-                <button
+              <div v-if="openCats.has(cat.id)" class="phrase-items">
+                <div
                   v-for="ph in cat.phrases"
                   :key="ph.id"
-                  class="phrase-chip"
-                  @click="insertPhrase(ph.text)"
-                >{{ ph.title }}</button>
+                  class="phrase-item"
+                  :title="ph.text"
+                  @click="insertPhrase(ph)"
+                >{{ ph.title }}</div>
               </div>
             </div>
           </div>
+        </transition>
+      </div>
 
-          <div class="thread-input-wrap">
-            <div class="thread-insert-bar">
-              <button type="button" class="ins-btn" @click="insertMsgAtCursor('[Имя]')">[Имя]</button>
-              <button type="button" class="ins-btn" :class="{ active: msgAttachPanel }" @click="msgAttachPanel = !msgAttachPanel">+ Вложение</button>
+      <!-- Reminders -->
+      <div class="left-section">
+        <div class="section-header" @click="remindersOpen = !remindersOpen">
+          <span>🔔 Напоминания <span v-if="reminders.length" class="reminder-count">{{ reminders.length }}</span></span>
+          <span class="section-arrow">{{ remindersOpen ? '▲' : '▼' }}</span>
+        </div>
+        <transition name="slide">
+          <div v-if="remindersOpen" class="reminders-wrap">
+            <div
+              v-for="r in reminders"
+              :key="r.clientId"
+              :class="['reminder-item', { overdue: r.isOverdue }]"
+              @click="openByConvId(r.conversationId)"
+            >
+              <span class="reminder-name">{{ r.clientName }}</span>
+              <span class="reminder-date">{{ fmtDate(r.nextContactDate) }}</span>
             </div>
-            <div v-if="msgAttachPanel" class="thread-attach-row">
-              <select v-model="msgAttachType" class="msg-attach-select">
-                <option value="photo">Фото</option>
-                <option value="video">Видео</option>
-                <option value="clip">Клип</option>
-                <option value="audio">Аудио</option>
-                <option value="audio_message">Голосовое</option>
-                <option value="doc">Документ</option>
-              </select>
-              <input v-model="msgAttachUrl" class="msg-attach-url" placeholder="https://vk.com/photo-12345_678" />
-              <button type="button" class="ins-btn ins-btn-ok" @click="insertMsgAttachment">Вставить</button>
-            </div>
-            <div class="thread-input">
-              <button class="phrase-toggle-btn" @click="togglePhrasePanel" title="Быстрые фразы">⚡</button>
-              <textarea
-                ref="msgInputRef"
-                v-model="draftText"
-                class="msg-input"
-                placeholder="Написать сообщение..."
-                rows="2"
-                @keydown.enter.exact.prevent="sendMsg"
-              ></textarea>
-              <button class="send-btn" :disabled="!draftText.trim() || sending" @click="sendMsg">
-                <span v-if="sending" class="spinner-sm"></span>
-                <span v-else>➤</span>
-              </button>
+            <div v-if="!reminders.length" class="empty-list">Нет напоминаний на ближайшую неделю</div>
+          </div>
+        </transition>
+      </div>
+    </div>
+
+    <!-- ═══ CENTER PANEL ════════════════════════════════════════════════════ -->
+    <div class="mgr-center">
+      <div v-if="!activeConv" class="center-empty">
+        <div class="empty-icon">💬</div>
+        <div>Выберите диалог слева</div>
+      </div>
+
+      <template v-else>
+        <!-- Thread header -->
+        <div class="thread-header">
+          <div class="thread-title">
+            <img v-if="activeConv.clientAvatar" :src="activeConv.clientAvatar" class="thread-avatar" />
+            <div v-else class="thread-avatar-ph">{{ activeConv.clientName?.[0] ?? '?' }}</div>
+            <div>
+              <div class="thread-name">{{ activeConv.clientName }}</div>
+              <div v-if="activeConv.crmStatus" class="thread-status">{{ activeConv.crmStatus }}</div>
             </div>
           </div>
-        </template>
-      </main>
-
-      <!-- RIGHT: client card -->
-      <aside class="client-pane">
-        <div v-if="mobileView === 'client'" class="mobile-client-back">
-          <button @click="mobileView = 'thread'">← Назад к диалогу</button>
+          <div class="thread-actions">
+            <!-- Bot assignment -->
+            <div class="bot-wrap" v-click-outside="() => botMenuOpen = false">
+              <button :class="['bot-btn', { 'bot-active': activeConv.assignedBotId, 'bot-paused': activeConv.botPaused }]" @click="botMenuOpen = !botMenuOpen">
+                🤖 {{ activeConv.assignedBotId ? (activeConv.assignedBotName || 'Бот') : 'Без бота' }}
+                {{ activeConv.botPaused ? '⏸' : '' }}
+              </button>
+              <div v-if="botMenuOpen" class="bot-menu">
+                <div class="bot-menu-item" @click="assignBot(null)">✕ Без бота</div>
+                <div v-for="bot in availableBots" :key="bot.id" class="bot-menu-item" @click="assignBot(bot.id)">
+                  {{ bot.name }} <span v-if="activeConv.assignedBotId === bot.id">✓</span>
+                </div>
+                <template v-if="activeConv.assignedBotId">
+                  <div class="bot-menu-sep" />
+                  <div class="bot-menu-item" @click="toggleBotPause">
+                    {{ activeConv.botPaused ? '▶ Возобновить бота' : '⏸ Поставить на паузу' }}
+                  </div>
+                </template>
+              </div>
+            </div>
+            <!-- Fullscreen toggle -->
+            <button class="fs-btn" :title="fullscreen ? 'Выйти из полноэкранного' : 'Полный экран'" @click="toggleFullscreen">
+              {{ fullscreen ? '⊡' : '⊞' }}
+            </button>
+          </div>
         </div>
 
-        <div v-if="!activeConv" class="client-empty">Выберите диалог для просмотра карточки клиента</div>
+        <!-- Messages -->
+        <div class="thread-msgs" ref="msgsRef" @scroll="onMsgsScroll">
+          <button v-if="nextCursor" class="load-older-btn" :disabled="loadingOlder" @click="loadOlderMsgs">
+            {{ loadingOlder ? 'Загрузка...' : 'Загрузить ранние сообщения' }}
+          </button>
+          <div v-if="msgsLoading && !messages.length" class="msgs-loading">Загрузка сообщений...</div>
+          <div
+            v-for="msg in messages"
+            :key="msg.id"
+            :class="['msg-bubble', msg.direction === 'OUT' ? 'msg-out' : 'msg-in']"
+          >
+            <div v-if="msg.direction === 'IN'" class="msg-sender">{{ msg.senderName }}</div>
+            <div class="msg-text">{{ msg.text }}</div>
+            <div v-if="msg.attachments?.length" class="msg-attachments">
+              <a v-for="(att, i) in msg.attachments" :key="i" :href="att.url || '#'" target="_blank" class="msg-att">
+                {{ att.type }}{{ att.title ? ': ' + att.title : '' }}
+              </a>
+            </div>
+            <div class="msg-time">{{ fmtMsgTime(msg.createdAt) }}</div>
+          </div>
+        </div>
 
-        <template v-else-if="clientInfo">
-          <div class="client-card">
-            <div class="client-header">
-              <div class="client-avatar-lg">
-                <img v-if="activeConv.clientAvatar" :src="activeConv.clientAvatar" alt="" />
-                <span v-else>{{ initials(activeConv.clientName) }}</span>
-              </div>
-              <div>
-                <div class="client-name">{{ clientInfo.fio || activeConv.clientName }}</div>
-                <div v-if="clientInfo.city" class="client-city">📍 {{ clientInfo.city }}</div>
-              </div>
-            </div>
-            <div class="client-fields">
-              <div class="client-field" v-if="clientInfo.phone"><span class="field-label">Телефон</span><span class="field-value">{{ clientInfo.phone }}</span></div>
-              <div class="client-field" v-if="clientInfo.source"><span class="field-label">Источник</span><span class="field-value">{{ clientInfo.source }}</span></div>
-              <div class="client-field" v-if="clientInfo.note"><span class="field-label">Заметка</span><span class="field-value">{{ clientInfo.note }}</span></div>
-            </div>
-            <div v-if="clientInfo.tags?.length" class="client-tags">
-              <span v-for="tag in clientInfo.tags" :key="tag" class="tag">{{ tag }}</span>
-            </div>
-            <div class="client-vk-link">
-              <a :href="`https://vk.com/id${activeConv.peerId}`" target="_blank" class="vk-link">Открыть профиль ВКонтакте ↗</a>
+        <!-- Input area -->
+        <div class="thread-input-area">
+          <div class="input-toolbar">
+            <button class="tb-btn" @click="insertToken('[Имя]')" title="Вставить имя клиента">[Имя]</button>
+            <button class="tb-btn" @click="attachPanel = !attachPanel" title="Добавить вложение">📎 Вложение</button>
+          </div>
+          <div v-if="attachPanel" class="attach-panel">
+            <select v-model="attachType" class="attach-type">
+              <option value="photo">photo</option>
+              <option value="video">video</option>
+              <option value="clip">clip</option>
+              <option value="audio">audio</option>
+              <option value="audio_message">audio_message</option>
+              <option value="doc">doc</option>
+            </select>
+            <input v-model="attachUrl" placeholder="URL или VK owner_id (напр. -12345_678)" class="attach-url" />
+            <button class="attach-ok" @click="doInsertAttachment">Вставить</button>
+          </div>
+          <div class="input-row">
+            <textarea
+              ref="inputRef"
+              v-model="msgText"
+              placeholder="Сообщение... (Enter — отправить, Shift+Enter — перенос строки)"
+              class="msg-textarea"
+              rows="3"
+              @keydown.enter.exact.prevent="sendMsg"
+            />
+            <button class="send-btn" :disabled="!msgText.trim() || sending" @click="sendMsg">
+              <span v-if="sending">...</span>
+              <span v-else>➤</span>
+            </button>
+          </div>
+        </div>
+      </template>
+    </div>
+
+    <!-- ═══ RIGHT PANEL ══════════════════════════════════════════════════════ -->
+    <div v-if="activeConv" class="mgr-right">
+      <div class="right-tabs">
+        <button :class="['rt-tab', { active: rightTab === 'client' }]" @click="rightTab = 'client'">Клиент</button>
+        <button :class="['rt-tab', { active: rightTab === 'orders' }]" @click="rightTab = 'orders'">Заказы</button>
+      </div>
+
+      <!-- Client card tab -->
+      <div v-if="rightTab === 'client'" class="client-card">
+        <div v-if="clientLoading" class="card-loading">Загрузка...</div>
+        <template v-else-if="editClient">
+          <div class="card-profile">
+            <img v-if="activeConv.clientAvatar" :src="activeConv.clientAvatar" class="card-avatar" />
+            <div>
+              <div class="card-vk-name">{{ activeConv.clientName }}</div>
+              <a :href="`https://vk.com/id${activeConv.peerId}`" target="_blank" class="card-vk-link">VK профиль ↗</a>
             </div>
           </div>
+
+          <div class="card-fields">
+            <div class="field-row">
+              <label>Имя</label>
+              <input v-model="editClient.firstName" placeholder="Имя" />
+            </div>
+            <div class="field-row">
+              <label>Фамилия</label>
+              <input v-model="editClient.lastName" placeholder="Фамилия" />
+            </div>
+            <div class="field-row">
+              <label>Телефон</label>
+              <input v-model="editClient.phone" placeholder="+7..." />
+            </div>
+            <div class="field-row">
+              <label>Email</label>
+              <input v-model="editClient.email" placeholder="email@..." />
+            </div>
+            <div class="field-row">
+              <label>Дата рождения</label>
+              <input type="date" v-model="editClient.birthDateStr" />
+            </div>
+            <div class="field-row">
+              <label>Страна</label>
+              <input v-model="editClient.country" placeholder="Россия" />
+            </div>
+            <div class="field-row">
+              <label>Город</label>
+              <input v-model="editClient.city" placeholder="Москва" />
+            </div>
+            <div class="field-row">
+              <label>Источник</label>
+              <input v-model="editClient.source" placeholder="ВКонтакте, Авито..." />
+            </div>
+            <div class="field-row">
+              <label>CRM-статус</label>
+              <select v-model="editClient.crmStatusId">
+                <option value="">— без статуса —</option>
+                <option v-for="s in crmStatuses" :key="s.id" :value="s.id">{{ s.name }}</option>
+              </select>
+            </div>
+            <div class="field-row">
+              <label>Теги</label>
+              <div class="tags-wrap">
+                <label v-for="t in allTags" :key="t.id" class="tag-check">
+                  <input type="checkbox" :value="t.id" v-model="editClient.tagIds" />
+                  <span class="tag-pill" :style="{ background: t.color + '33', color: t.color }">{{ t.name }}</span>
+                </label>
+              </div>
+            </div>
+            <div class="field-row">
+              <label>Следующий контакт</label>
+              <input type="date" v-model="editClient.nextContactDateStr" />
+            </div>
+            <div class="field-row">
+              <label>Заметка</label>
+              <textarea v-model="editClient.note" rows="3" placeholder="Заметки..." />
+            </div>
+          </div>
+
+          <div class="card-actions">
+            <button class="save-btn" :disabled="savingClient" @click="saveClient">
+              {{ savingClient ? 'Сохраняю...' : 'Сохранить' }}
+            </button>
+            <span v-if="savedMsg" class="saved-msg">{{ savedMsg }}</span>
+          </div>
         </template>
-        <div v-else-if="clientLoading" class="client-loading"><span class="spinner"></span></div>
-      </aside>
+      </div>
+
+      <!-- Orders tab -->
+      <div v-if="rightTab === 'orders'" class="orders-panel">
+        <div v-if="ordersLoading" class="card-loading">Загрузка...</div>
+        <template v-else>
+          <div class="orders-list">
+            <div v-for="ord in clientOrders" :key="ord.id" class="order-item">
+              <div class="order-header">
+                <span class="order-num">{{ ord.orderNumber || ord.id.slice(-6) }}</span>
+                <span class="order-status" :style="{ background: ord.orderStatus?.color + '33', color: ord.orderStatus?.color }">
+                  {{ ord.orderStatus?.name || 'Без статуса' }}
+                </span>
+              </div>
+              <div class="order-title">{{ ord.title || '—' }}</div>
+              <div class="order-amount" v-if="ord.amount">{{ Number(ord.amount).toLocaleString('ru-RU') }} ₽</div>
+            </div>
+            <div v-if="!clientOrders.length" class="empty-list">Нет заказов</div>
+          </div>
+
+          <!-- New order form -->
+          <div class="new-order-form">
+            <div class="form-title">+ Новый заказ</div>
+            <input v-model="newOrder.title" placeholder="Название заказа" class="order-input" />
+            <input v-model="newOrder.amount" placeholder="Сумма (₽)" type="number" class="order-input" />
+            <select v-model="newOrder.orderStatusId" class="order-input">
+              <option value="">— статус —</option>
+              <option v-for="s in orderStatuses" :key="s.id" :value="s.id">{{ s.name }}</option>
+            </select>
+            <textarea v-model="newOrder.note" placeholder="Заметка" rows="2" class="order-input" />
+            <button class="save-btn" :disabled="creatingOrder" @click="createNewOrder">
+              {{ creatingOrder ? 'Создаю...' : 'Создать заказ' }}
+            </button>
+          </div>
+        </template>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, nextTick } from 'vue';
-import type { AssistantConversation, AssistantMessage, AssistantClient } from '~/composables/useAssistant';
+import { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
+import type { AssistantConversation, AssistantMessage } from '~/composables/useAssistant';
 
-const api = useAssistant();
-const phrasesApi = useAssistantModule();
+definePageMeta({ middleware: ['auth'] });
 
+const assistant = useAssistant();
+const rt = useVkRealtime();
+const fullscreen = useState('messengerFullscreen', () => false);
+
+// ─── Filters & search ────────────────────────────────────────────────────────
+const FILTERS = [
+  { v: 'all', l: 'Все' },
+  { v: 'unread', l: 'Непрочитанные' },
+] as const;
+
+const filter = ref<'all' | 'unread' | 'unanswered'>('all');
+const search = ref('');
+let searchTimer: any = null;
+
+function onSearchInput() {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => loadConvs(true), 400);
+}
+
+function setFilter(v: 'all' | 'unread' | 'unanswered') {
+  filter.value = v;
+  loadConvs(true);
+}
+
+// ─── Conversation list ────────────────────────────────────────────────────────
 const conversations = ref<AssistantConversation[]>([]);
-const convTotal = ref(0);
-const convPage = ref(0);
-const convLoading = ref(false);
-const activeFilter = ref<'all' | 'unread' | 'unanswered'>('all');
-const searchQuery = ref('');
-const searchDebounce = ref<ReturnType<typeof setTimeout> | null>(null);
+const convsLoading = ref(false);
+const convsPage = ref(0);
+const convsTotal = ref(0);
+const convListRef = ref<HTMLElement>();
 
+const canLoadMore = computed(() => conversations.value.length < convsTotal.value);
+
+async function loadConvs(reset = false) {
+  if (reset) { convsPage.value = 0; conversations.value = []; }
+  convsLoading.value = true;
+  try {
+    const res = await assistant.listConversations({
+      filter: filter.value,
+      search: search.value || undefined,
+      page: convsPage.value,
+    });
+    if (reset) {
+      conversations.value = res.items;
+    } else {
+      conversations.value.push(...res.items);
+    }
+    convsTotal.value = res.total;
+  } catch (e) {
+    console.error('loadConvs error', e);
+  } finally {
+    convsLoading.value = false;
+  }
+}
+
+async function loadMoreConvs() {
+  convsPage.value++;
+  await loadConvs(false);
+}
+
+// ─── Active conversation & messages ──────────────────────────────────────────
 const activeConv = ref<AssistantConversation | null>(null);
 const messages = ref<AssistantMessage[]>([]);
-const msgLoading = ref(false);
-const msgLoadingMore = ref(false);
-const msgNextCursor = ref<string | null>(null);
-const draftText = ref('');
+const msgsLoading = ref(false);
+const loadingOlder = ref(false);
+const nextCursor = ref<string | null>(null);
+const msgsRef = ref<HTMLElement>();
+
+async function openConv(c: AssistantConversation) {
+  activeConv.value = c;
+  messages.value = [];
+  nextCursor.value = null;
+  rightTab.value = 'client';
+  botMenuOpen.value = false;
+  msgText.value = '';
+  attachPanel.value = false;
+
+  await Promise.all([
+    loadMessages(),
+    loadClientCard(c.peerId),
+  ]);
+  scrollToBottom();
+}
+
+async function openByConvId(convId: string | null) {
+  if (!convId) return;
+  const c = conversations.value.find((x) => x.id === convId);
+  if (c) await openConv(c);
+}
+
+async function loadMessages() {
+  if (!activeConv.value) return;
+  msgsLoading.value = true;
+  try {
+    const res = await assistant.getMessages(activeConv.value.id);
+    messages.value = res.items;
+    nextCursor.value = res.nextCursor;
+  } catch (e) {
+    console.error('loadMessages error', e);
+  } finally {
+    msgsLoading.value = false;
+  }
+}
+
+async function loadOlderMsgs() {
+  if (!activeConv.value || !nextCursor.value) return;
+  loadingOlder.value = true;
+  try {
+    const res = await assistant.getMessages(activeConv.value.id, nextCursor.value);
+    messages.value = [...res.items, ...messages.value];
+    nextCursor.value = res.nextCursor;
+  } finally {
+    loadingOlder.value = false;
+  }
+}
+
+function onMsgsScroll() {
+  // could trigger load older on scroll-to-top but handled via button for simplicity
+}
+
+function scrollToBottom() {
+  nextTick(() => {
+    if (msgsRef.value) msgsRef.value.scrollTop = msgsRef.value.scrollHeight;
+  });
+}
+
+// ─── Send message ─────────────────────────────────────────────────────────────
+const msgText = ref('');
 const sending = ref(false);
+const inputRef = ref<HTMLTextAreaElement>();
+const attachPanel = ref(false);
+const attachType = ref('photo');
+const attachUrl = ref('');
 
-const clientInfo = ref<AssistantClient | null>(null);
+async function sendMsg() {
+  if (!activeConv.value || !msgText.value.trim() || sending.value) return;
+  sending.value = true;
+  try {
+    const msg = await assistant.sendMessage(activeConv.value.id, msgText.value);
+    messages.value.push(msg as any);
+    msgText.value = '';
+    scrollToBottom();
+  } catch (e) {
+    console.error('sendMsg error', e);
+  } finally {
+    sending.value = false;
+  }
+}
+
+function insertToken(token: string) {
+  const el = inputRef.value;
+  if (!el) { msgText.value += token; return; }
+  const start = el.selectionStart ?? msgText.value.length;
+  const end = el.selectionEnd ?? start;
+  msgText.value = msgText.value.slice(0, start) + token + msgText.value.slice(end);
+  nextTick(() => el.setSelectionRange(start + token.length, start + token.length));
+}
+
+function doInsertAttachment() {
+  const url = attachUrl.value.trim();
+  if (!url) return;
+  // Try to extract owner_id from URL or use raw
+  let marker = '';
+  const match = url.match(/(-?\d+_\d+)/);
+  if (match) {
+    marker = `[${attachType.value}${match[1]}]`;
+  } else {
+    marker = `[${attachType.value}${url}]`;
+  }
+  insertToken(marker);
+  attachUrl.value = '';
+  attachPanel.value = false;
+}
+
+function insertPhrase(ph: any) {
+  if (!activeConv.value) return;
+  let text = ph.text as string;
+  // Replace [Имя] with client first name
+  if (activeConv.value.clientName) {
+    const firstName = activeConv.value.clientName.trim().split(/\s+/)[0];
+    text = text.replace(/\[Имя\]/g, firstName);
+  }
+  insertToken(text);
+  nextTick(() => inputRef.value?.focus());
+}
+
+// ─── Bot assignment ────────────────────────────────────────────────────────────
+const botMenuOpen = ref(false);
+const availableBots = ref<any[]>([]);
+
+async function loadBots() {
+  try {
+    const res = await assistant.getBots();
+    availableBots.value = (res as any[]).filter((b) => b.enabled && !b.archived);
+  } catch {}
+}
+
+async function assignBot(botId: string | null) {
+  if (!activeConv.value) return;
+  botMenuOpen.value = false;
+  try {
+    const info = await assistant.setConversationBot(activeConv.value.id, botId);
+    activeConv.value.assignedBotId = info.botId;
+    activeConv.value.assignedBotName = info.botName;
+    activeConv.value.botPaused = info.paused;
+    // Also update in list
+    const c = conversations.value.find((x) => x.id === activeConv.value!.id);
+    if (c) { c.assignedBotId = info.botId; c.assignedBotName = info.botName; c.botPaused = info.paused; }
+  } catch (e) {
+    console.error('assignBot error', e);
+  }
+}
+
+async function toggleBotPause() {
+  if (!activeConv.value) return;
+  botMenuOpen.value = false;
+  const newPaused = !activeConv.value.botPaused;
+  try {
+    const info = await assistant.setConversationBot(activeConv.value.id, undefined, newPaused);
+    activeConv.value.botPaused = info.paused;
+    const c = conversations.value.find((x) => x.id === activeConv.value!.id);
+    if (c) c.botPaused = info.paused;
+  } catch (e) {
+    console.error('toggleBotPause error', e);
+  }
+}
+
+// ─── Client card ──────────────────────────────────────────────────────────────
+const rightTab = ref<'client' | 'orders'>('client');
 const clientLoading = ref(false);
+const savingClient = ref(false);
+const savedMsg = ref('');
+const crmStatuses = ref<any[]>([]);
+const allTags = ref<any[]>([]);
+const editClient = ref<{
+  id: string;
+  firstName: string;
+  lastName: string;
+  phone: string;
+  email: string;
+  birthDateStr: string;
+  country: string;
+  city: string;
+  source: string;
+  crmStatusId: string;
+  nextContactDateStr: string;
+  note: string;
+  tagIds: string[];
+} | null>(null);
 
-const syncing = ref(false);
-const tokenError = ref('');
+async function loadClientCard(peerId: number) {
+  clientLoading.value = true;
+  try {
+    const c = await assistant.getClient(peerId);
+    editClient.value = {
+      id: c.id,
+      firstName: c.firstName ?? '',
+      lastName: c.lastName ?? '',
+      phone: c.phone ?? '',
+      email: c.email ?? '',
+      birthDateStr: c.birthDate ? new Date(c.birthDate).toISOString().split('T')[0] : '',
+      country: c.country ?? '',
+      city: c.city ?? '',
+      source: c.source ?? '',
+      crmStatusId: c.crmStatusId ?? '',
+      nextContactDateStr: c.nextContactDate ? new Date(c.nextContactDate).toISOString().split('T')[0] : '',
+      note: c.note ?? '',
+      tagIds: Array.isArray(c.tags) ? c.tags.map((t: any) => t.id ?? t).filter(Boolean) : [],
+    };
+  } catch (e) {
+    console.error('loadClientCard error', e);
+  } finally {
+    clientLoading.value = false;
+  }
+}
 
-const convListEl = ref<HTMLElement | null>(null);
-const threadEl = ref<HTMLElement | null>(null);
-const mobileView = ref<'list' | 'thread' | 'client'>('list');
+async function saveClient() {
+  if (!editClient.value) return;
+  savingClient.value = true;
+  savedMsg.value = '';
+  try {
+    await assistant.updateClient(editClient.value.id, {
+      firstName: editClient.value.firstName || undefined,
+      lastName: editClient.value.lastName || undefined,
+      phone: editClient.value.phone || undefined,
+      email: editClient.value.email || undefined,
+      birthDate: editClient.value.birthDateStr || undefined,
+      country: editClient.value.country || undefined,
+      city: editClient.value.city || undefined,
+      source: editClient.value.source || undefined,
+      crmStatusId: editClient.value.crmStatusId || undefined,
+      nextContactDate: editClient.value.nextContactDateStr || undefined,
+      note: editClient.value.note || undefined,
+      tagIds: editClient.value.tagIds,
+    } as any);
+    savedMsg.value = 'Сохранено!';
+    setTimeout(() => { savedMsg.value = ''; }, 2500);
+    // Reload reminders after next-contact-date change
+    loadReminders();
+  } catch (e) {
+    savedMsg.value = 'Ошибка сохранения';
+    console.error('saveClient error', e);
+  } finally {
+    savingClient.value = false;
+  }
+}
 
-const phrasePanelOpen = ref(false);
-const phraseCategories = ref<any[]>([]);
+// ─── Orders ────────────────────────────────────────────────────────────────────
+const ordersLoading = ref(false);
+const clientOrders = ref<any[]>([]);
+const orderStatuses = ref<any[]>([]);
+const newOrder = reactive({ title: '', amount: '', orderStatusId: '', note: '' });
+const creatingOrder = ref(false);
 
-const msgInputRef = ref<HTMLTextAreaElement | null>(null);
-const msgAttachPanel = ref(false);
-const msgAttachType = ref('photo');
-const msgAttachUrl = ref('');
+async function loadClientOrders() {
+  if (!editClient.value?.id) return;
+  ordersLoading.value = true;
+  try {
+    const res = await assistant.getClientOrders(editClient.value.id);
+    clientOrders.value = res.items ?? res;
+  } catch (e) {
+    console.error('loadClientOrders error', e);
+  } finally {
+    ordersLoading.value = false;
+  }
+}
 
-const FILTERS = [
-  { id: 'all' as const, label: 'Все' },
-  { id: 'unread' as const, label: 'Непрочитанные' },
-  { id: 'unanswered' as const, label: 'Неотвеченные' },
-];
-
-onMounted(async () => {
-  const health = await api.checkTokenHealth().catch(() => ({ ok: false, message: 'Нет связи с сервером' }));
-  if (!health.ok) tokenError.value = health.message;
-  await loadConversations(true);
+watch(rightTab, (tab) => {
+  if (tab === 'orders' && editClient.value) loadClientOrders();
 });
 
-async function loadConversations(reset = false) {
-  if (convLoading.value) return;
-  convLoading.value = true;
-  if (reset) { convPage.value = 0; conversations.value = []; }
+async function createNewOrder() {
+  if (!editClient.value?.id || !newOrder.title) return;
+  creatingOrder.value = true;
   try {
-    const res = await api.listConversations({ filter: activeFilter.value, search: searchQuery.value || undefined, page: convPage.value });
-    if (reset) conversations.value = res.items;
-    else conversations.value.push(...res.items);
-    convTotal.value = res.total;
-  } catch { /* silent */ } finally { convLoading.value = false; }
+    await assistant.createOrder({
+      clientId: editClient.value.id,
+      title: newOrder.title,
+      amount: newOrder.amount ? Number(newOrder.amount) : undefined,
+      orderStatusId: newOrder.orderStatusId || undefined,
+      note: newOrder.note || undefined,
+    });
+    newOrder.title = ''; newOrder.amount = ''; newOrder.orderStatusId = ''; newOrder.note = '';
+    await loadClientOrders();
+  } catch (e) {
+    console.error('createOrder error', e);
+  } finally {
+    creatingOrder.value = false;
+  }
 }
 
-function setFilter(f: 'all' | 'unread' | 'unanswered') { activeFilter.value = f; loadConversations(true); }
+// ─── Quick phrases ─────────────────────────────────────────────────────────────
+const phraseCategories = ref<any[]>([]);
+const phrasesOpen = ref(false);
+const openCats = ref(new Set<string>());
 
-function onSearch() {
-  if (searchDebounce.value) clearTimeout(searchDebounce.value);
-  searchDebounce.value = setTimeout(() => loadConversations(true), 400);
+async function loadPhrases() {
+  try {
+    const res = await assistant.getPhrases();
+    phraseCategories.value = Array.isArray(res) ? res : (res.items ?? []);
+  } catch (e) {
+    console.error('loadPhrases error', e);
+  }
 }
 
-function onConvScroll(e: Event) {
-  const el = e.target as HTMLElement;
-  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 100) {
-    if (conversations.value.length < convTotal.value && !convLoading.value) {
-      convPage.value++;
-      loadConversations(false);
+function toggleCat(id: string) {
+  if (openCats.value.has(id)) openCats.value.delete(id);
+  else openCats.value.add(id);
+}
+
+// ─── Reminders ────────────────────────────────────────────────────────────────
+const remindersOpen = ref(true);
+const reminders = ref<any[]>([]);
+
+async function loadReminders() {
+  try {
+    reminders.value = await assistant.getReminders();
+  } catch {}
+}
+
+// ─── Realtime ────────────────────────────────────────────────────────────────
+function onVkMsgNew(data: { conversationId: string; message: AssistantMessage }) {
+  if (activeConv.value?.id === data.conversationId) {
+    // Avoid duplicates
+    if (!messages.value.find((m) => m.id === data.message.id)) {
+      messages.value.push(data.message);
+      nextTick(scrollToBottom);
+    }
+  }
+  // Update conversation in list
+  const c = conversations.value.find((x) => x.id === data.conversationId);
+  if (c) {
+    c.lastMessageText = data.message.text;
+    c.lastMessageAt = data.message.createdAt;
+    if (data.message.direction === 'IN' && activeConv.value?.id !== c.id) {
+      c.unreadCount = (c.unreadCount ?? 0) + 1;
+    }
+    // Move to top
+    const idx = conversations.value.indexOf(c);
+    if (idx > 0) {
+      conversations.value.splice(idx, 1);
+      conversations.value.unshift(c);
     }
   }
 }
 
-async function selectConv(conv: AssistantConversation) {
-  if (activeConv.value?.id === conv.id) return;
-  activeConv.value = conv;
-  messages.value = [];
-  msgNextCursor.value = null;
-  clientInfo.value = null;
-  mobileView.value = 'thread';
-  await loadMessages();
-  await loadClient(conv.peerId);
-  await nextTick();
-  scrollThreadToBottom();
-}
-
-async function loadMessages(loadMore = false) {
-  if (!activeConv.value) return;
-  if (loadMore) msgLoadingMore.value = true;
-  else msgLoading.value = true;
-  try {
-    const cursor = loadMore ? msgNextCursor.value ?? undefined : undefined;
-    const res = await api.getMessages(activeConv.value.id, cursor ?? undefined);
-    if (loadMore) messages.value = [...res.items, ...messages.value];
-    else messages.value = res.items;
-    msgNextCursor.value = res.nextCursor;
-  } catch { /* silent */ } finally { msgLoading.value = false; msgLoadingMore.value = false; }
-}
-
-function onThreadScroll(e: Event) {
-  const el = e.target as HTMLElement;
-  if (el.scrollTop < 80 && msgNextCursor.value && !msgLoadingMore.value) loadMessages(true);
-}
-
-function scrollThreadToBottom() {
-  if (threadEl.value) threadEl.value.scrollTop = threadEl.value.scrollHeight;
-}
-
-async function sendMsg() {
-  if (!activeConv.value || !draftText.value.trim() || sending.value) return;
-  sending.value = true;
-  const text = draftText.value.trim();
-  draftText.value = '';
-  try {
-    const msg = await api.sendMessage(activeConv.value.id, text);
-    messages.value.push(msg);
-    const idx = conversations.value.findIndex((c) => c.id === activeConv.value!.id);
-    if (idx >= 0) conversations.value[idx] = { ...conversations.value[idx], lastMessageText: text };
-    await nextTick();
-    scrollThreadToBottom();
-  } catch { draftText.value = text; } finally { sending.value = false; }
-}
-
-async function loadClient(peerId: number) {
-  clientLoading.value = true;
-  try { clientInfo.value = await api.getClient(peerId); }
-  catch { clientInfo.value = null; } finally { clientLoading.value = false; }
-}
-
-async function doSync() {
-  if (syncing.value) return;
-  syncing.value = true;
-  try { await api.triggerSync(); setTimeout(() => loadConversations(true), 3000); }
-  catch { /* silent */ } finally { setTimeout(() => { syncing.value = false; }, 2000); }
-}
-
-async function togglePhrasePanel() {
-  phrasePanelOpen.value = !phrasePanelOpen.value;
-  if (phrasePanelOpen.value && !phraseCategories.value.length) {
-    try { phraseCategories.value = await phrasesApi.listPhrases(); }
-    catch { phraseCategories.value = []; }
+function onVkConvUpdate(data: AssistantConversation) {
+  const idx = conversations.value.findIndex((c) => c.id === data.id);
+  if (idx >= 0) {
+    Object.assign(conversations.value[idx], data);
+    if (idx > 0) {
+      const c = conversations.value.splice(idx, 1)[0];
+      conversations.value.unshift(c);
+    }
+  } else {
+    // New conversation not yet in list
+    conversations.value.unshift(data);
   }
 }
 
-function insertPhrase(text: string) {
-  draftText.value = (draftText.value + ' ' + text).trim();
-  phrasePanelOpen.value = false;
+// ─── Fullscreen ──────────────────────────────────────────────────────────────
+function toggleFullscreen() {
+  fullscreen.value = !fullscreen.value;
 }
 
-function insertMsgAtCursor(marker: string) {
-  const el = msgInputRef.value;
-  if (!el) { draftText.value += marker; return; }
-  const start = el.selectionStart ?? draftText.value.length;
-  const end = el.selectionEnd ?? start;
-  draftText.value = draftText.value.slice(0, start) + marker + draftText.value.slice(end);
-  nextTick(() => { el.focus(); el.setSelectionRange(start + marker.length, start + marker.length); });
-}
-
-function insertMsgAttachment() {
-  const url = msgAttachUrl.value.trim();
-  if (!url) return;
-  const type = msgAttachType.value;
-  const typeEsc = type.replace('_', '_?');
-  const m = url.match(new RegExp(`(?:vk\\.com/)?${typeEsc}(-?\\d+_\\d+)`));
-  if (!m) { alert(`Не удалось извлечь ID из URL для типа «${type}»`); return; }
-  const marker = `[${type}${m[1]}]`;
-  insertMsgAtCursor(marker);
-  msgAttachUrl.value = '';
-  msgAttachPanel.value = false;
-}
-
-function showDateSep(idx: number): boolean {
-  if (idx === 0) return true;
-  return formatDate(messages.value[idx - 1].createdAt) !== formatDate(messages.value[idx].createdAt);
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
-}
-
-function formatTime(iso: string): string {
+// ─── Format helpers ──────────────────────────────────────────────────────────
+function fmtTime(iso: string): string {
+  if (!iso) return '';
   const d = new Date(iso);
   const now = new Date();
-  if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-  const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
-  if (d.toDateString() === yesterday.toDateString()) return 'вчера';
-  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+  const isToday = d.toDateString() === now.toDateString();
+  if (isToday) return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
 }
 
-function formatMsgTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+function fmtMsgTime(iso: string): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
 }
 
-function initials(name: string): string {
-  return name.trim().split(' ').slice(0, 2).map((p) => p[0]?.toUpperCase() ?? '').join('');
+function fmtDate(iso: string): string {
+  if (!iso) return '';
+  return new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
 }
+
+// ─── Lifecycle ───────────────────────────────────────────────────────────────
+onMounted(async () => {
+  await loadConvs(true);
+  await Promise.all([
+    loadPhrases(),
+    loadReminders(),
+    loadBots(),
+    assistant.getCrmStatuses().then((r) => { crmStatuses.value = r as any[]; }),
+    assistant.getTags().then((r) => { allTags.value = r as any[]; }),
+    assistant.getOrderStatuses().then((r) => { orderStatuses.value = r as any[]; }),
+  ]);
+
+  // Realtime
+  rt.connect();
+  rt.on('vk:msg:new', onVkMsgNew);
+  rt.on('vk:conv:update', onVkConvUpdate);
+});
+
+onUnmounted(() => {
+  rt.off('vk:msg:new', onVkMsgNew);
+  rt.off('vk:conv:update', onVkConvUpdate);
+  // Don't disconnect - keep alive for other pages, unless navigating away from assistant entirely
+});
+
+// Custom directive v-click-outside
+const vClickOutside = {
+  mounted(el: HTMLElement, binding: any) {
+    el._clickOutsideHandler = (e: MouseEvent) => {
+      if (!el.contains(e.target as Node)) binding.value(e);
+    };
+    document.addEventListener('click', el._clickOutsideHandler);
+  },
+  unmounted(el: any) {
+    document.removeEventListener('click', el._clickOutsideHandler);
+  },
+};
 </script>
 
 <style scoped>
-.messenger-page {
+/* ═══ Layout ═══════════════════════════════════════════════════════════════════ */
+.mgr {
+  display: flex;
   height: 100%;
+  background: #f1f5f9;
+  overflow: hidden;
+}
+.mgr--fs {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+}
+
+/* ─── Left panel ─── */
+.mgr-left {
+  width: 280px;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  background: #f5f5f5;
+  background: #fff;
+  border-right: 1px solid #e2e8f0;
   overflow: hidden;
 }
 
-.token-banner {
-  background: #fef3cd;
-  border-bottom: 1px solid #ffc107;
-  padding: 10px 16px;
+.left-header {
+  padding: 10px 10px 6px;
+  border-bottom: 1px solid #e2e8f0;
+}
+.conv-search {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 6px 10px;
   font-size: 13px;
-  color: #7a5c00;
+  outline: none;
+  box-sizing: border-box;
+  margin-bottom: 6px;
+}
+.conv-search:focus { border-color: #6366f1; }
+.filter-row { display: flex; gap: 4px; }
+.filter-btn {
+  flex: 1;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  border-radius: 5px;
+  padding: 4px 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.filter-btn.active { background: #6366f1; color: #fff; border-color: #6366f1; }
+
+.conv-list {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 120px;
+}
+.list-loading { padding: 16px; text-align: center; color: #94a3b8; font-size: 13px; }
+
+.conv-item {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 10px;
+  cursor: pointer;
+  border-bottom: 1px solid #f1f5f9;
+  transition: background 0.1s;
+}
+.conv-item:hover { background: #f8fafc; }
+.conv-item.active { background: #ede9fe; }
+.conv-item.unread .conv-name { font-weight: 600; }
+
+.conv-avatar-wrap { position: relative; flex-shrink: 0; }
+.conv-avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; }
+.conv-avatar-placeholder {
+  width: 40px; height: 40px; border-radius: 50%;
+  background: #6366f1; color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 16px;
+}
+.conv-badge {
+  position: absolute; top: -4px; right: -4px;
+  background: #ef4444; color: #fff;
+  border-radius: 10px; font-size: 10px;
+  padding: 1px 4px; min-width: 16px; text-align: center;
+}
+.conv-body { flex: 1; min-width: 0; }
+.conv-name-row { display: flex; justify-content: space-between; gap: 4px; }
+.conv-name { font-size: 13.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.conv-time { font-size: 11px; color: #94a3b8; flex-shrink: 0; }
+.conv-last { font-size: 12px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+.conv-bot-badge { font-size: 10.5px; color: #6366f1; background: #ede9fe; border-radius: 4px; padding: 1px 5px; margin-top: 3px; display: inline-block; }
+.conv-bot-badge.paused { color: #f59e0b; background: #fef3c7; }
+
+.load-more-btn {
+  display: block; width: 100%; padding: 10px;
+  border: none; background: none; color: #6366f1;
+  font-size: 13px; cursor: pointer;
+}
+.load-more-btn:hover { background: #f8fafc; }
+
+/* ─── Left sections ─── */
+.left-section {
+  border-top: 1px solid #e2e8f0;
   flex-shrink: 0;
 }
-.token-hint { color: #9a7000; }
-.token-hint code { background: #fff3cd; padding: 1px 4px; border-radius: 3px; }
+.section-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 12px; cursor: pointer;
+  font-size: 12.5px; font-weight: 600; color: #475569;
+  user-select: none;
+}
+.section-header:hover { background: #f8fafc; }
+.section-arrow { color: #94a3b8; }
+.reminder-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  background: #ef4444; color: #fff;
+  border-radius: 10px; font-size: 10px; padding: 0 5px; margin-left: 4px;
+}
 
-.messenger-layout { flex: 1; display: flex; overflow: hidden; }
+.phrases-wrap, .reminders-wrap {
+  max-height: 220px; overflow-y: auto;
+  padding: 4px 0;
+}
+.phrase-cat-hdr {
+  display: flex; justify-content: space-between;
+  padding: 5px 12px; font-size: 12px; font-weight: 600; color: #64748b;
+  cursor: pointer; background: #f8fafc;
+}
+.phrase-cat-hdr:hover { background: #f1f5f9; }
+.phrase-items { padding: 2px 0; }
+.phrase-item {
+  padding: 5px 20px; font-size: 12.5px; cursor: pointer; color: #374151;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.phrase-item:hover { background: #ede9fe; color: #4f46e5; }
 
-/* Conv sidebar */
-.conv-sidebar { width: 300px; flex-shrink: 0; background: #fff; border-right: 1px solid #e5e7eb; display: flex; flex-direction: column; overflow: hidden; }
-.conv-header { padding: 12px; border-bottom: 1px solid #e5e7eb; flex-shrink: 0; }
-.conv-title-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.conv-title { font-weight: 700; font-size: 15px; color: #111; }
-.sync-btn { background: none; border: 1px solid #e5e7eb; border-radius: 6px; width: 30px; height: 30px; cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center; color: #555; }
-.sync-btn.spinning { animation: spin 1s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
-.filter-tabs { display: flex; gap: 4px; margin-bottom: 8px; }
-.filter-tab { flex: 1; padding: 5px 2px; border: 1px solid #e5e7eb; border-radius: 6px; background: none; cursor: pointer; font-size: 11px; color: #666; }
-.filter-tab.active { background: #2563eb; color: #fff; border-color: #2563eb; }
-.conv-search { width: 100%; border: 1px solid #e5e7eb; border-radius: 8px; padding: 7px 10px; font-size: 13px; outline: none; box-sizing: border-box; }
-.conv-search:focus { border-color: #2563eb; }
-.conv-list { flex: 1; overflow-y: auto; }
-.conv-loading { padding: 24px; text-align: center; color: #888; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 8px; }
-.conv-empty { padding: 40px 16px; text-align: center; color: #aaa; font-size: 14px; }
-.conv-item { display: flex; gap: 10px; padding: 10px 12px; cursor: pointer; border-bottom: 1px solid #f0f0f0; }
-.conv-item:hover { background: #f5f7ff; }
-.conv-item.active { background: #eff6ff; }
-.conv-avatar { position: relative; flex-shrink: 0; width: 42px; height: 42px; }
-.conv-avatar img { width: 42px; height: 42px; border-radius: 50%; object-fit: cover; }
-.conv-avatar-placeholder { width: 42px; height: 42px; border-radius: 50%; background: #2563eb; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 14px; }
-.unread-badge { position: absolute; top: -2px; right: -2px; background: #ef4444; color: #fff; border-radius: 99px; font-size: 10px; min-width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; padding: 0 3px; font-weight: 600; }
-.conv-info { flex: 1; min-width: 0; }
-.conv-name-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 3px; }
-.conv-name { font-weight: 600; font-size: 13px; color: #111; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
-.conv-time { font-size: 11px; color: #999; flex-shrink: 0; }
-.conv-preview { font-size: 12px; color: #777; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.conv-loading-more { padding: 8px; text-align: center; }
+.reminder-item {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 6px 12px; cursor: pointer; font-size: 12.5px; border-bottom: 1px solid #f1f5f9;
+}
+.reminder-item:hover { background: #fef9ee; }
+.reminder-item.overdue { background: #fef2f2; }
+.reminder-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reminder-date { font-size: 11px; color: #64748b; flex-shrink: 0; margin-left: 8px; }
+.reminder-item.overdue .reminder-date { color: #ef4444; font-weight: 600; }
+.empty-list { padding: 10px 12px; font-size: 12px; color: #94a3b8; }
 
-/* Thread pane */
-.thread-pane { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: #fff; }
-.thread-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: #aaa; font-size: 15px; }
-.thread-empty-icon { font-size: 48px; }
-.thread-header { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid #e5e7eb; flex-shrink: 0; background: #fff; }
-.back-btn { background: none; border: none; font-size: 20px; cursor: pointer; color: #444; display: none; }
-.thread-avatar { width: 34px; height: 34px; border-radius: 50%; background: #2563eb; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 12px; flex-shrink: 0; }
-.thread-avatar img { width: 34px; height: 34px; border-radius: 50%; object-fit: cover; }
-.thread-name { font-weight: 600; font-size: 15px; color: #111; flex: 1; }
-.client-card-btn { background: none; border: none; font-size: 18px; cursor: pointer; display: none; }
-.thread-messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 4px; }
-.msg-loading { display: flex; align-items: center; justify-content: center; padding: 32px; color: #888; gap: 8px; }
-.msg-loading-more { text-align: center; padding: 8px; }
-.date-sep { text-align: center; font-size: 11px; color: #aaa; padding: 8px 0; }
-.msg-row { display: flex; }
-.msg-in { justify-content: flex-start; }
-.msg-out { justify-content: flex-end; }
-.bubble { max-width: 70%; padding: 8px 12px; border-radius: 16px; }
-.msg-in .bubble { background: #f0f0f0; border-bottom-left-radius: 4px; }
-.msg-out .bubble { background: #2563eb; color: #fff; border-bottom-right-radius: 4px; }
-.bubble-text { font-size: 14px; line-height: 1.4; white-space: pre-wrap; word-break: break-word; }
-.att-img { max-width: 200px; max-height: 200px; border-radius: 8px; margin-top: 4px; display: block; }
-.att-link { display: block; text-decoration: none; margin-top: 4px; }
-.att-link-text { margin-top: 4px; font-size: 13px; }
-.att-link-text a { color: inherit; }
-.msg-out .att-link-text a { color: #cce0ff; }
-.att-generic { margin-top: 4px; font-size: 13px; opacity: 0.8; }
-.bubble-meta { font-size: 10px; opacity: 0.65; text-align: right; margin-top: 4px; }
+/* ─── Center panel ─── */
+.mgr-center {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: #f8fafc;
+}
+.center-empty {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  color: #94a3b8; gap: 10px;
+}
+.empty-icon { font-size: 48px; }
 
-/* Quick phrases */
-.phrase-panel { border-top: 1px solid #e5e7eb; background: #f9fafb; max-height: 180px; overflow-y: auto; flex-shrink: 0; }
-.phrase-panel-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; font-size: 12px; font-weight: 600; color: #555; border-bottom: 1px solid #e5e7eb; }
-.phrase-panel-header button { background: none; border: none; cursor: pointer; color: #888; font-size: 14px; }
-.phrase-panel-body { padding: 8px 12px; display: flex; flex-direction: column; gap: 8px; }
-.phrase-empty { font-size: 12px; color: #aaa; }
-.phrase-cat { display: flex; flex-direction: column; gap: 4px; }
-.phrase-cat-name { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
-.phrase-chip { background: #eff6ff; border: 1px solid #bfdbfe; color: #2563eb; border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; text-align: left; width: fit-content; }
-.phrase-chip:hover { background: #dbeafe; }
+/* Thread header */
+.thread-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 14px; background: #fff;
+  border-bottom: 1px solid #e2e8f0;
+  flex-shrink: 0;
+}
+.thread-title { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.thread-avatar { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+.thread-avatar-ph {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: #6366f1; color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 14px; flex-shrink: 0;
+}
+.thread-name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.thread-status { font-size: 11px; color: #6366f1; }
+.thread-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 
-/* Thread input */
-.thread-input-wrap { border-top: 1px solid #e5e7eb; background: #fff; flex-shrink: 0; }
-.thread-insert-bar { display: flex; gap: 6px; padding: 6px 12px 0; flex-wrap: wrap; }
-.thread-attach-row { display: flex; gap: 6px; padding: 4px 12px; align-items: center; flex-wrap: wrap; }
-.msg-attach-select { border: 1px solid #d1d5db; border-radius: 6px; padding: 4px 6px; font-size: 12px; outline: none; }
-.msg-attach-url { flex: 1; min-width: 160px; border: 1px solid #d1d5db; border-radius: 6px; padding: 4px 8px; font-size: 12px; outline: none; }
-.msg-attach-url:focus { border-color: #2563eb; }
-.ins-btn { background: #f1f5f9; border: 1px solid #d1d5db; border-radius: 6px; padding: 3px 9px; font-size: 12px; cursor: pointer; color: #374151; white-space: nowrap; }
-.ins-btn:hover, .ins-btn.active { background: #dbeafe; border-color: #2563eb; color: #1d4ed8; }
-.ins-btn-ok { background: #2563eb; color: #fff; border-color: #2563eb; }
-.ins-btn-ok:hover { background: #1d4ed8; }
-.thread-input { display: flex; gap: 8px; padding: 8px 12px 12px; align-items: flex-end; }
-.phrase-toggle-btn { background: none; border: 1px solid #e5e7eb; border-radius: 8px; width: 36px; height: 36px; cursor: pointer; font-size: 16px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #555; }
-.phrase-toggle-btn:hover { background: #f0f0f0; }
-.msg-input { flex: 1; border: 1px solid #d1d5db; border-radius: 12px; padding: 8px 12px; font-size: 14px; resize: none; outline: none; font-family: inherit; line-height: 1.4; }
-.msg-input:focus { border-color: #2563eb; }
-.send-btn { background: #2563eb; color: #fff; border: none; border-radius: 12px; width: 42px; height: 42px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 16px; flex-shrink: 0; }
+/* Bot button */
+.bot-wrap { position: relative; }
+.bot-btn {
+  border: 1px solid #e2e8f0; background: #f8fafc;
+  border-radius: 6px; padding: 5px 10px;
+  font-size: 12px; cursor: pointer; transition: all 0.15s;
+  white-space: nowrap;
+}
+.bot-btn:hover { border-color: #6366f1; color: #6366f1; }
+.bot-btn.bot-active { border-color: #6366f1; background: #ede9fe; color: #4f46e5; }
+.bot-btn.bot-paused { border-color: #f59e0b; background: #fef3c7; color: #b45309; }
+.bot-menu {
+  position: absolute; top: calc(100% + 6px); right: 0;
+  background: #fff; border: 1px solid #e2e8f0;
+  border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,.12);
+  min-width: 180px; z-index: 50;
+}
+.bot-menu-item {
+  padding: 8px 14px; font-size: 13px; cursor: pointer;
+}
+.bot-menu-item:hover { background: #f1f5f9; }
+.bot-menu-sep { border-top: 1px solid #e2e8f0; margin: 4px 0; }
+
+.fs-btn {
+  border: 1px solid #e2e8f0; background: #f8fafc;
+  border-radius: 6px; padding: 5px 8px;
+  font-size: 14px; cursor: pointer; line-height: 1;
+}
+.fs-btn:hover { border-color: #6366f1; }
+
+/* Messages */
+.thread-msgs {
+  flex: 1; overflow-y: auto;
+  padding: 14px; display: flex; flex-direction: column; gap: 8px;
+}
+.msgs-loading { text-align: center; color: #94a3b8; font-size: 13px; padding: 20px; }
+.load-older-btn {
+  align-self: center; border: 1px solid #e2e8f0; background: #fff;
+  border-radius: 6px; padding: 5px 14px; font-size: 12.5px; cursor: pointer; color: #6366f1;
+  margin-bottom: 8px;
+}
+.load-older-btn:hover { background: #ede9fe; }
+
+.msg-bubble {
+  max-width: 70%; padding: 8px 12px; border-radius: 10px; font-size: 13.5px; line-height: 1.5;
+}
+.msg-in {
+  align-self: flex-start;
+  background: #fff; border: 1px solid #e2e8f0;
+  border-bottom-left-radius: 2px;
+}
+.msg-out {
+  align-self: flex-end;
+  background: #6366f1; color: #fff;
+  border-bottom-right-radius: 2px;
+}
+.msg-sender { font-size: 11px; font-weight: 600; color: #6366f1; margin-bottom: 2px; }
+.msg-text { white-space: pre-wrap; word-break: break-word; }
+.msg-time { font-size: 10.5px; color: rgba(0,0,0,.35); text-align: right; margin-top: 3px; }
+.msg-out .msg-time { color: rgba(255,255,255,.6); }
+.msg-attachments { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.msg-att { font-size: 11.5px; color: #6366f1; text-decoration: underline; }
+.msg-out .msg-att { color: #c7d2fe; }
+
+/* Input area */
+.thread-input-area {
+  background: #fff; border-top: 1px solid #e2e8f0;
+  padding: 8px 12px; flex-shrink: 0;
+}
+.input-toolbar { display: flex; gap: 6px; margin-bottom: 6px; }
+.tb-btn {
+  border: 1px solid #e2e8f0; background: #f8fafc;
+  border-radius: 5px; padding: 3px 9px;
+  font-size: 12px; cursor: pointer;
+}
+.tb-btn:hover { border-color: #6366f1; color: #6366f1; }
+
+.attach-panel {
+  display: flex; align-items: center; gap: 6px; margin-bottom: 6px;
+}
+.attach-type { border: 1px solid #e2e8f0; border-radius: 5px; padding: 4px 6px; font-size: 12px; }
+.attach-url {
+  flex: 1; border: 1px solid #cbd5e1; border-radius: 5px;
+  padding: 4px 8px; font-size: 12px;
+}
+.attach-ok {
+  border: 1px solid #6366f1; background: #ede9fe; color: #4f46e5;
+  border-radius: 5px; padding: 4px 10px; font-size: 12px; cursor: pointer;
+}
+
+.input-row { display: flex; gap: 8px; align-items: flex-end; }
+.msg-textarea {
+  flex: 1; border: 1px solid #cbd5e1; border-radius: 8px;
+  padding: 8px 12px; font-size: 13.5px; resize: none;
+  outline: none; font-family: inherit;
+}
+.msg-textarea:focus { border-color: #6366f1; }
+.send-btn {
+  background: #6366f1; color: #fff;
+  border: none; border-radius: 8px;
+  padding: 10px 16px; font-size: 16px; cursor: pointer;
+  flex-shrink: 0; transition: background 0.15s;
+}
+.send-btn:hover:not(:disabled) { background: #4f46e5; }
 .send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-/* Client pane */
-.client-pane { width: 260px; flex-shrink: 0; background: #fafafa; border-left: 1px solid #e5e7eb; overflow-y: auto; }
-.client-empty { padding: 32px 16px; text-align: center; color: #bbb; font-size: 13px; }
-.client-loading { display: flex; align-items: center; justify-content: center; padding: 32px; }
-.client-card { padding: 16px; }
-.client-header { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 16px; }
-.client-avatar-lg { width: 48px; height: 48px; border-radius: 50%; background: #2563eb; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 16px; flex-shrink: 0; }
-.client-avatar-lg img { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; }
-.client-name { font-weight: 700; font-size: 14px; color: #111; }
-.client-city { font-size: 12px; color: #888; margin-top: 2px; }
-.client-fields { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
-.client-field { display: flex; flex-direction: column; gap: 2px; }
-.field-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #aaa; }
-.field-value { font-size: 13px; color: #222; }
-.client-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
-.tag { background: #f0f0f0; color: #555; padding: 3px 8px; border-radius: 99px; font-size: 12px; }
-.vk-link { font-size: 12px; color: #2563eb; text-decoration: none; }
-.vk-link:hover { text-decoration: underline; }
-.mobile-client-back { display: none; padding: 10px; border-bottom: 1px solid #e5e7eb; }
-.mobile-client-back button { background: none; border: none; color: #2563eb; cursor: pointer; font-size: 14px; }
+/* ─── Right panel ─── */
+.mgr-right {
+  width: 300px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border-left: 1px solid #e2e8f0;
+  overflow: hidden;
+}
+.right-tabs {
+  display: flex; border-bottom: 1px solid #e2e8f0; flex-shrink: 0;
+}
+.rt-tab {
+  flex: 1; padding: 9px; font-size: 13px; border: none; background: none;
+  cursor: pointer; color: #64748b; border-bottom: 2px solid transparent;
+}
+.rt-tab.active { color: #6366f1; border-bottom-color: #6366f1; font-weight: 600; }
 
-/* Spinners */
-.spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid #d1d5db; border-top-color: #2563eb; border-radius: 50%; animation: spin 0.7s linear infinite; }
-.spinner-sm { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.4); border-top-color: #fff; border-radius: 50%; animation: spin 0.7s linear infinite; }
-.conv-loading .spinner-sm, .msg-loading-more .spinner-sm { border-color: #d1d5db; border-top-color: #2563eb; }
+.client-card {
+  flex: 1; overflow-y: auto; padding: 12px;
+}
+.card-loading { padding: 20px; text-align: center; color: #94a3b8; }
+.card-profile { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.card-avatar { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; }
+.card-vk-name { font-size: 13.5px; font-weight: 600; }
+.card-vk-link { font-size: 11.5px; color: #6366f1; text-decoration: none; }
+.card-vk-link:hover { text-decoration: underline; }
 
-/* Mobile */
+.card-fields { display: flex; flex-direction: column; gap: 8px; }
+.field-row { display: flex; flex-direction: column; gap: 2px; }
+.field-row label { font-size: 11px; color: #64748b; font-weight: 500; }
+.field-row input,
+.field-row select,
+.field-row textarea {
+  border: 1px solid #e2e8f0; border-radius: 5px;
+  padding: 5px 8px; font-size: 12.5px;
+  outline: none; font-family: inherit; width: 100%; box-sizing: border-box;
+}
+.field-row input:focus,
+.field-row select:focus,
+.field-row textarea:focus { border-color: #6366f1; }
+
+.tags-wrap { display: flex; flex-wrap: wrap; gap: 4px; }
+.tag-check { display: flex; align-items: center; cursor: pointer; }
+.tag-check input { display: none; }
+.tag-pill {
+  border-radius: 12px; padding: 2px 8px; font-size: 11.5px;
+  cursor: pointer; transition: opacity 0.15s;
+}
+.tag-check input:not(:checked) + .tag-pill { opacity: 0.4; }
+
+.card-actions { margin-top: 12px; display: flex; align-items: center; gap: 10px; }
+.save-btn {
+  background: #6366f1; color: #fff; border: none;
+  border-radius: 6px; padding: 7px 18px; font-size: 13px;
+  cursor: pointer; transition: background 0.15s;
+}
+.save-btn:hover:not(:disabled) { background: #4f46e5; }
+.save-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.saved-msg { font-size: 12.5px; color: #10b981; }
+
+/* Orders */
+.orders-panel { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+.orders-list { display: flex; flex-direction: column; gap: 8px; }
+.order-item { border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 10px; }
+.order-header { display: flex; justify-content: space-between; align-items: center; gap: 6px; margin-bottom: 4px; }
+.order-num { font-size: 11px; color: #94a3b8; }
+.order-status { font-size: 11px; border-radius: 10px; padding: 1px 7px; }
+.order-title { font-size: 13px; font-weight: 500; }
+.order-amount { font-size: 12.5px; color: #4f46e5; font-weight: 600; margin-top: 2px; }
+
+.new-order-form { border-top: 1px solid #e2e8f0; padding-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+.form-title { font-size: 12.5px; font-weight: 600; color: #64748b; }
+.order-input {
+  border: 1px solid #e2e8f0; border-radius: 5px; padding: 5px 8px;
+  font-size: 12.5px; outline: none; font-family: inherit;
+}
+.order-input:focus { border-color: #6366f1; }
+
+/* Transitions */
+.slide-enter-active, .slide-leave-active { transition: max-height 0.2s ease, opacity 0.2s; overflow: hidden; }
+.slide-enter-from, .slide-leave-to { max-height: 0; opacity: 0; }
+.slide-enter-to, .slide-leave-from { max-height: 300px; opacity: 1; }
+
+/* Mobile: hide right panel on small screens */
 @media (max-width: 900px) {
-  .messenger-layout { position: relative; }
-  .conv-sidebar { position: absolute; inset: 0; width: 100%; z-index: 10; transition: transform 0.25s; }
-  .messenger-layout.mobile-thread .conv-sidebar, .messenger-layout.mobile-client .conv-sidebar { transform: translateX(-100%); }
-  .thread-pane { position: absolute; inset: 0; width: 100%; z-index: 20; transform: translateX(100%); transition: transform 0.25s; }
-  .messenger-layout.mobile-thread .thread-pane, .messenger-layout.mobile-client .thread-pane { transform: translateX(0); }
-  .client-pane { position: absolute; inset: 0; width: 100%; z-index: 30; transform: translateX(100%); transition: transform 0.25s; }
-  .messenger-layout.mobile-client .client-pane { transform: translateX(0); }
-  .back-btn { display: block; }
-  .client-card-btn { display: block; }
-  .mobile-client-back { display: block; }
+  .mgr-right { display: none; }
+}
+@media (max-width: 600px) {
+  .mgr-left { width: 100%; }
+  .mgr-center { display: none; }
 }
 </style>

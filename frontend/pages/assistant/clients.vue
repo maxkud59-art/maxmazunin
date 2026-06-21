@@ -3,28 +3,156 @@
     <div class="tab-header">
       <h1 class="tab-title">Клиенты</h1>
       <span class="tab-count" v-if="total > 0">{{ total }}</span>
+      <div class="header-right">
+        <div class="page-size-group">
+          <label class="page-size-label">По:</label>
+          <select v-model="pageSize" class="filter-select-sm" @change="applyFilters">
+            <option v-for="s in PAGE_SIZES" :key="s" :value="s">{{ s }}</option>
+          </select>
+        </div>
+        <button class="btn-filters" :class="{ active: filtersOpen || hasActiveFilters }" @click="filtersOpen = !filtersOpen">
+          Фильтры{{ hasActiveFilters ? ` (${activeFilterCount})` : '' }} {{ filtersOpen ? '▲' : '▼' }}
+        </button>
+      </div>
     </div>
 
-    <!-- Filters -->
-    <div class="filter-bar">
-      <input v-model="search" class="filter-input" placeholder="Поиск по имени..." @input="onSearch" />
-
-      <select v-model="filterCrmStatus" class="filter-select" @change="load(true)">
-        <option value="">Все статусы</option>
-        <option v-for="s in crmStatuses" :key="s.id" :value="s.id">{{ s.name }}</option>
-      </select>
-
-      <select v-model="filterTag" class="filter-select" @change="load(true)">
-        <option value="">Все теги</option>
-        <option v-for="t in tags" :key="t.id" :value="t.id">{{ t.name }}</option>
-      </select>
-
-      <div class="page-size-group">
-        <label class="page-size-label">По:</label>
-        <select v-model="pageSize" class="filter-select-sm" @change="load(true)">
-          <option v-for="s in PAGE_SIZES" :key="s" :value="s">{{ s }}</option>
-        </select>
+    <!-- Filter Panel -->
+    <div v-if="filtersOpen" class="filter-panel">
+      <div class="filter-tabs">
+        <button class="filter-tab" :class="{ active: filterTab === 'clients' }" @click="filterTab = 'clients'">По клиентам</button>
+        <button class="filter-tab" :class="{ active: filterTab === 'orders' }" @click="filterTab = 'orders'">По заказам</button>
       </div>
+
+      <!-- Tab: По клиентам -->
+      <div v-if="filterTab === 'clients'" class="filter-grid">
+        <div class="filter-field">
+          <label class="filter-label">ФИО / имя в соцсетях</label>
+          <input v-model="draft.search" class="filter-input" placeholder="Поиск по имени..." />
+        </div>
+        <div class="filter-field">
+          <label class="filter-label">VK-страница</label>
+          <input v-model="draft.vkUrl" class="filter-input" placeholder="vk.com/id..." />
+        </div>
+        <div class="filter-field">
+          <label class="filter-label">Телефон</label>
+          <input v-model="draft.phone" class="filter-input" placeholder="+7..." />
+        </div>
+        <div class="filter-field">
+          <label class="filter-label">Город</label>
+          <input v-model="draft.city" class="filter-input" placeholder="Москва..." />
+        </div>
+        <div class="filter-field">
+          <label class="filter-label">Источник</label>
+          <input v-model="draft.source" class="filter-input" placeholder="Откуда клиент..." />
+        </div>
+        <div class="filter-field">
+          <label class="filter-label">Заметка (содержит)</label>
+          <input v-model="draft.note" class="filter-input" placeholder="Текст заметки..." />
+        </div>
+
+        <div class="filter-field full-width">
+          <label class="filter-label">CRM-статус</label>
+          <div class="chip-group">
+            <label v-for="s in crmStatuses.filter(x => !x.archived)" :key="s.id" class="chip-check">
+              <input type="checkbox" :value="s.id" v-model="draft.crmStatusIds" />
+              <span class="chip" :style="{ background: s.color + '22', color: s.color, borderColor: s.color + '55' }">{{ s.name }}</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="filter-field full-width">
+          <label class="filter-label">
+            Теги
+            <span class="tag-match-group">
+              <label class="radio-label"><input type="radio" v-model="draft.tagMatch" value="any" /> Любой</label>
+              <label class="radio-label"><input type="radio" v-model="draft.tagMatch" value="all" /> Все</label>
+            </span>
+          </label>
+          <div class="chip-group">
+            <label v-for="t in tags.filter(x => !x.archived)" :key="t.id" class="chip-check">
+              <input type="checkbox" :value="t.id" v-model="draft.tagIds" />
+              <span class="chip" :style="{ background: t.color + '22', color: t.color }">{{ t.name }}</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="filter-field">
+          <label class="filter-label">Первый контакт — от</label>
+          <input type="date" v-model="draft.firstContactFrom" class="filter-input" />
+        </div>
+        <div class="filter-field">
+          <label class="filter-label">Первый контакт — до</label>
+          <input type="date" v-model="draft.firstContactTo" class="filter-input" />
+        </div>
+        <div class="filter-field">
+          <label class="filter-label">Последний контакт — от</label>
+          <input type="date" v-model="draft.lastContactFrom" class="filter-input" />
+        </div>
+        <div class="filter-field">
+          <label class="filter-label">Последний контакт — до</label>
+          <input type="date" v-model="draft.lastContactTo" class="filter-input" />
+        </div>
+        <div class="filter-field">
+          <label class="filter-label">Следующий контакт — от</label>
+          <input type="date" v-model="draft.nextContactFrom" class="filter-input" />
+        </div>
+        <div class="filter-field">
+          <label class="filter-label">Следующий контакт — до</label>
+          <input type="date" v-model="draft.nextContactTo" class="filter-input" />
+        </div>
+
+        <div class="filter-field full-width">
+          <label class="filter-label">VK ID (несколько, через запятую)</label>
+          <input v-model="draft.peerIds" class="filter-input" placeholder="123456, 789012, ..." />
+        </div>
+        <div class="filter-field full-width">
+          <label class="filter-label">ID клиентов (несколько, через запятую)</label>
+          <input v-model="draft.ids" class="filter-input" placeholder="cuid1, cuid2, ..." />
+        </div>
+      </div>
+
+      <!-- Tab: По заказам -->
+      <div v-if="filterTab === 'orders'" class="filter-grid">
+        <div class="filter-field full-width">
+          <label class="filter-label">Наличие заказов</label>
+          <div class="radio-group">
+            <label class="radio-label"><input type="radio" v-model="draft.hasOrders" value="" /> Не важно</label>
+            <label class="radio-label"><input type="radio" v-model="draft.hasOrders" value="yes" /> Есть заказы</label>
+            <label class="radio-label"><input type="radio" v-model="draft.hasOrders" value="no" /> Нет заказов</label>
+          </div>
+        </div>
+        <div class="filter-field">
+          <label class="filter-label">Статус заказа</label>
+          <select v-model="draft.orderStatusId" class="filter-input">
+            <option value="">— любой —</option>
+            <option v-for="s in orderStatuses.filter(x => !x.archived)" :key="s.id" :value="s.id">{{ s.name }}</option>
+          </select>
+        </div>
+        <div class="filter-field">
+          <label class="filter-label">Сумма — от (₽)</label>
+          <input type="number" v-model="draft.orderAmountMin" class="filter-input" placeholder="0" min="0" />
+        </div>
+        <div class="filter-field">
+          <label class="filter-label">Сумма — до (₽)</label>
+          <input type="number" v-model="draft.orderAmountMax" class="filter-input" placeholder="∞" min="0" />
+        </div>
+      </div>
+
+      <div class="filter-actions">
+        <button class="btn-reset" @click="resetFilters">Сбросить</button>
+        <button class="btn-apply" @click="applyFilters">
+          Показать{{ total > 0 ? ` (${total})` : '' }}
+        </button>
+      </div>
+    </div>
+
+    <!-- Active filter chips (when panel is closed) -->
+    <div v-if="!filtersOpen && hasActiveFilters" class="active-chips">
+      <span v-for="chip in activeChips" :key="chip.key" class="active-chip">
+        {{ chip.label }}
+        <button class="chip-remove" @click="removeFilter(chip.key)">✕</button>
+      </span>
+      <button class="chip-clear-all" @click="resetFilters">Сбросить все</button>
     </div>
 
     <!-- Table -->
@@ -32,7 +160,7 @@
       <div v-if="loading && !items.length" class="state-loading"><span class="spinner"></span> Загрузка...</div>
       <div v-else-if="!loading && !items.length" class="state-empty">
         <div class="state-empty-icon">👥</div>
-        <div>Клиентов нет. После синхронизации VK-диалогов клиенты появятся здесь.</div>
+        <div>{{ hasActiveFilters ? 'Нет клиентов по заданным фильтрам.' : 'Клиентов нет. После синхронизации VK-диалогов клиенты появятся здесь.' }}</div>
       </div>
       <table v-else class="data-table">
         <thead>
@@ -85,7 +213,7 @@
     <!-- Pagination -->
     <div v-if="total > 0" class="pagination">
       <button class="pg-btn" :disabled="page === 0" @click="goPage(page - 1)">← Пред</button>
-      <span class="pg-info">Стр. {{ page + 1 }} из {{ totalPages }}</span>
+      <span class="pg-info">Стр. {{ page + 1 }} из {{ totalPages }} · {{ total }} клиентов</span>
       <button class="pg-btn" :disabled="page >= totalPages - 1" @click="goPage(page + 1)">След →</button>
     </div>
 
@@ -123,8 +251,17 @@
             <label class="form-label">Телефон</label>
             <input v-model="editForm.phone" class="form-input" placeholder="+7..." />
 
+            <label class="form-label">Email</label>
+            <input v-model="editForm.email" class="form-input" placeholder="..." />
+
+            <label class="form-label">Город</label>
+            <input v-model="editForm.city" class="form-input" placeholder="..." />
+
             <label class="form-label">Источник</label>
             <input v-model="editForm.source" class="form-input" placeholder="Откуда клиент..." />
+
+            <label class="form-label">След. контакт</label>
+            <input type="date" v-model="editForm.nextContactDate" class="form-input" />
 
             <label class="form-label">Заметка</label>
             <textarea v-model="editForm.note" class="form-textarea" rows="3" placeholder="Произвольная заметка..."></textarea>
@@ -155,26 +292,24 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
-import { useRouter } from 'vue-router';
-import type { ClientListItem, CrmStatus, Tag } from '~/composables/useAssistantModule';
+import { useRouter, useRoute } from 'vue-router';
+import type { ClientListItem, CrmStatus, Tag, OrderStatus } from '~/composables/useAssistantModule';
 
 const api = useAssistantModule();
 const router = useRouter();
+const route = useRoute();
 
 const items = ref<ClientListItem[]>([]);
 const total = ref(0);
 const page = ref(0);
 const pageSize = ref(30);
 const loading = ref(false);
-const search = ref('');
-const filterCrmStatus = ref('');
-const filterTag = ref('');
 const sortBy = ref('firstContactAt');
 const sortDir = ref<'asc' | 'desc'>('desc');
-const searchDebounce = ref<any>(null);
 
 const crmStatuses = ref<CrmStatus[]>([]);
 const tags = ref<Tag[]>([]);
+const orderStatuses = ref<OrderStatus[]>([]);
 
 const modalClient = ref<any>(null);
 const editForm = ref<any>({});
@@ -182,29 +317,201 @@ const saving = ref(false);
 
 const PAGE_SIZES = [30, 50, 100, 500, 1000];
 
+const filtersOpen = ref(false);
+const filterTab = ref<'clients' | 'orders'>('clients');
+
+function emptyDraft() {
+  return {
+    search: '',
+    vkUrl: '',
+    phone: '',
+    city: '',
+    source: '',
+    note: '',
+    crmStatusIds: [] as string[],
+    tagIds: [] as string[],
+    tagMatch: 'any',
+    firstContactFrom: '',
+    firstContactTo: '',
+    lastContactFrom: '',
+    lastContactTo: '',
+    nextContactFrom: '',
+    nextContactTo: '',
+    peerIds: '',
+    ids: '',
+    hasOrders: '',
+    orderStatusId: '',
+    orderAmountMin: '',
+    orderAmountMax: '',
+  };
+}
+
+const draft = ref(emptyDraft());
+const applied = ref(emptyDraft());
+
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)));
 
+const hasActiveFilters = computed(() => {
+  const a = applied.value;
+  return !!(
+    a.search || a.vkUrl || a.phone || a.city || a.source || a.note ||
+    a.crmStatusIds.length || a.tagIds.length ||
+    a.firstContactFrom || a.firstContactTo ||
+    a.lastContactFrom || a.lastContactTo ||
+    a.nextContactFrom || a.nextContactTo ||
+    a.peerIds || a.ids ||
+    a.hasOrders || a.orderStatusId || a.orderAmountMin || a.orderAmountMax
+  );
+});
+
+const activeFilterCount = computed(() => {
+  const a = applied.value;
+  let n = 0;
+  if (a.search) n++;
+  if (a.vkUrl) n++;
+  if (a.phone) n++;
+  if (a.city) n++;
+  if (a.source) n++;
+  if (a.note) n++;
+  if (a.crmStatusIds.length) n++;
+  if (a.tagIds.length) n++;
+  if (a.firstContactFrom || a.firstContactTo) n++;
+  if (a.lastContactFrom || a.lastContactTo) n++;
+  if (a.nextContactFrom || a.nextContactTo) n++;
+  if (a.peerIds) n++;
+  if (a.ids) n++;
+  if (a.hasOrders) n++;
+  if (a.orderStatusId) n++;
+  if (a.orderAmountMin || a.orderAmountMax) n++;
+  return n;
+});
+
+const activeChips = computed(() => {
+  const a = applied.value;
+  const chips: { key: string; label: string }[] = [];
+  if (a.search) chips.push({ key: 'search', label: `Поиск: «${a.search}»` });
+  if (a.vkUrl) chips.push({ key: 'vkUrl', label: `VK: ${a.vkUrl}` });
+  if (a.phone) chips.push({ key: 'phone', label: `Тел: ${a.phone}` });
+  if (a.city) chips.push({ key: 'city', label: `Город: ${a.city}` });
+  if (a.source) chips.push({ key: 'source', label: `Источник: ${a.source}` });
+  if (a.note) chips.push({ key: 'note', label: `Заметка: ${a.note}` });
+  if (a.crmStatusIds.length) {
+    const names = a.crmStatusIds.map(id => crmStatuses.value.find(s => s.id === id)?.name ?? id).join(', ');
+    chips.push({ key: 'crmStatusIds', label: `Статус: ${names}` });
+  }
+  if (a.tagIds.length) {
+    const names = a.tagIds.map(id => tags.value.find(t => t.id === id)?.name ?? id).join(', ');
+    chips.push({ key: 'tagIds', label: `Теги (${a.tagMatch === 'all' ? 'все' : 'любой'}): ${names}` });
+  }
+  if (a.firstContactFrom || a.firstContactTo) chips.push({ key: 'firstContact', label: `Первый контакт: ${a.firstContactFrom || '…'} — ${a.firstContactTo || '…'}` });
+  if (a.lastContactFrom || a.lastContactTo) chips.push({ key: 'lastContact', label: `Последний: ${a.lastContactFrom || '…'} — ${a.lastContactTo || '…'}` });
+  if (a.nextContactFrom || a.nextContactTo) chips.push({ key: 'nextContact', label: `След. контакт: ${a.nextContactFrom || '…'} — ${a.nextContactTo || '…'}` });
+  if (a.peerIds) chips.push({ key: 'peerIds', label: `VK ID: ${a.peerIds}` });
+  if (a.ids) chips.push({ key: 'ids', label: `ID: ${a.ids}` });
+  if (a.hasOrders === 'yes') chips.push({ key: 'hasOrders', label: 'Есть заказы' });
+  if (a.hasOrders === 'no') chips.push({ key: 'hasOrders', label: 'Нет заказов' });
+  if (a.orderStatusId) {
+    const name = orderStatuses.value.find(s => s.id === a.orderStatusId)?.name ?? a.orderStatusId;
+    chips.push({ key: 'orderStatusId', label: `Статус заказа: ${name}` });
+  }
+  if (a.orderAmountMin || a.orderAmountMax) chips.push({ key: 'orderAmount', label: `Сумма: ${a.orderAmountMin || '0'} — ${a.orderAmountMax || '∞'} ₽` });
+  return chips;
+});
+
 onMounted(async () => {
-  await Promise.all([loadDirectories(), load(true)]);
+  await loadDirectories();
+  readQueryParams();
+  await load(true);
 });
 
 async function loadDirectories() {
-  [crmStatuses.value, tags.value] = await Promise.all([
+  [crmStatuses.value, tags.value, orderStatuses.value] = await Promise.all([
     api.listCrmStatuses(),
     api.listTags(),
+    api.listOrderStatuses(),
   ]);
+}
+
+function readQueryParams() {
+  const q = route.query as Record<string, string>;
+  if (q.page) page.value = Number(q.page);
+  if (q.pageSize) pageSize.value = Number(q.pageSize);
+  if (q.sortBy) sortBy.value = q.sortBy;
+  if (q.sortDir) sortDir.value = q.sortDir as 'asc' | 'desc';
+
+  const strKeys = ['search', 'vkUrl', 'phone', 'city', 'source', 'note',
+    'firstContactFrom', 'firstContactTo', 'lastContactFrom', 'lastContactTo',
+    'nextContactFrom', 'nextContactTo', 'peerIds', 'ids',
+    'hasOrders', 'orderStatusId', 'orderAmountMin', 'orderAmountMax', 'tagMatch'] as const;
+  for (const k of strKeys) {
+    if (q[k]) (draft.value as any)[k] = q[k];
+  }
+  if (q.crmStatusIds) draft.value.crmStatusIds = q.crmStatusIds.split(',').filter(Boolean);
+  if (q.tagIds) draft.value.tagIds = q.tagIds.split(',').filter(Boolean);
+  applied.value = { ...draft.value, crmStatusIds: [...draft.value.crmStatusIds], tagIds: [...draft.value.tagIds] };
+}
+
+function buildQueryParams(): Record<string, string> {
+  const a = applied.value;
+  const q: Record<string, string> = {
+    page: String(page.value),
+    pageSize: String(pageSize.value),
+    sortBy: sortBy.value,
+    sortDir: sortDir.value,
+  };
+  if (a.search) q.search = a.search;
+  if (a.vkUrl) q.vkUrl = a.vkUrl;
+  if (a.phone) q.phone = a.phone;
+  if (a.city) q.city = a.city;
+  if (a.source) q.source = a.source;
+  if (a.note) q.note = a.note;
+  if (a.crmStatusIds.length) q.crmStatusIds = a.crmStatusIds.join(',');
+  if (a.tagIds.length) { q.tagIds = a.tagIds.join(','); q.tagMatch = a.tagMatch; }
+  if (a.firstContactFrom) q.firstContactFrom = a.firstContactFrom;
+  if (a.firstContactTo) q.firstContactTo = a.firstContactTo;
+  if (a.lastContactFrom) q.lastContactFrom = a.lastContactFrom;
+  if (a.lastContactTo) q.lastContactTo = a.lastContactTo;
+  if (a.nextContactFrom) q.nextContactFrom = a.nextContactFrom;
+  if (a.nextContactTo) q.nextContactTo = a.nextContactTo;
+  if (a.peerIds) q.peerIds = a.peerIds;
+  if (a.ids) q.ids = a.ids;
+  if (a.hasOrders) q.hasOrders = a.hasOrders;
+  if (a.orderStatusId) q.orderStatusId = a.orderStatusId;
+  if (a.orderAmountMin) q.orderAmountMin = a.orderAmountMin;
+  if (a.orderAmountMax) q.orderAmountMax = a.orderAmountMax;
+  return q;
 }
 
 async function load(reset = false) {
   if (reset) page.value = 0;
   loading.value = true;
+  router.replace({ query: buildQueryParams() }).catch(() => {});
   try {
+    const a = applied.value;
     const res = await api.listClients({
       page: page.value,
       pageSize: pageSize.value,
-      search: search.value || undefined,
-      crmStatusId: filterCrmStatus.value || undefined,
-      tagId: filterTag.value || undefined,
+      search: a.search || undefined,
+      vkUrl: a.vkUrl || undefined,
+      phone: a.phone || undefined,
+      city: a.city || undefined,
+      source: a.source || undefined,
+      note: a.note || undefined,
+      crmStatusIds: a.crmStatusIds.length ? a.crmStatusIds.join(',') : undefined,
+      tagIds: a.tagIds.length ? a.tagIds.join(',') : undefined,
+      tagMatch: a.tagIds.length ? a.tagMatch : undefined,
+      firstContactFrom: a.firstContactFrom || undefined,
+      firstContactTo: a.firstContactTo || undefined,
+      lastContactFrom: a.lastContactFrom || undefined,
+      lastContactTo: a.lastContactTo || undefined,
+      nextContactFrom: a.nextContactFrom || undefined,
+      nextContactTo: a.nextContactTo || undefined,
+      peerIds: a.peerIds || undefined,
+      ids: a.ids || undefined,
+      hasOrders: a.hasOrders || undefined,
+      orderStatusId: a.orderStatusId || undefined,
+      orderAmountMin: a.orderAmountMin || undefined,
+      orderAmountMax: a.orderAmountMax || undefined,
       sortBy: sortBy.value,
       sortDir: sortDir.value,
     });
@@ -213,9 +520,39 @@ async function load(reset = false) {
   } catch { /* silent */ } finally { loading.value = false; }
 }
 
-function onSearch() {
-  if (searchDebounce.value) clearTimeout(searchDebounce.value);
-  searchDebounce.value = setTimeout(() => load(true), 400);
+function applyFilters() {
+  applied.value = { ...draft.value, crmStatusIds: [...draft.value.crmStatusIds], tagIds: [...draft.value.tagIds] };
+  load(true);
+}
+
+function resetFilters() {
+  const empty = emptyDraft();
+  draft.value = empty;
+  applied.value = { ...empty, crmStatusIds: [], tagIds: [] };
+  load(true);
+}
+
+function removeFilter(key: string) {
+  const a = { ...applied.value, crmStatusIds: [...applied.value.crmStatusIds], tagIds: [...applied.value.tagIds] };
+  if (key === 'search') a.search = '';
+  else if (key === 'vkUrl') a.vkUrl = '';
+  else if (key === 'phone') a.phone = '';
+  else if (key === 'city') a.city = '';
+  else if (key === 'source') a.source = '';
+  else if (key === 'note') a.note = '';
+  else if (key === 'crmStatusIds') a.crmStatusIds = [];
+  else if (key === 'tagIds') a.tagIds = [];
+  else if (key === 'firstContact') { a.firstContactFrom = ''; a.firstContactTo = ''; }
+  else if (key === 'lastContact') { a.lastContactFrom = ''; a.lastContactTo = ''; }
+  else if (key === 'nextContact') { a.nextContactFrom = ''; a.nextContactTo = ''; }
+  else if (key === 'peerIds') a.peerIds = '';
+  else if (key === 'ids') a.ids = '';
+  else if (key === 'hasOrders') a.hasOrders = '';
+  else if (key === 'orderStatusId') a.orderStatusId = '';
+  else if (key === 'orderAmount') { a.orderAmountMin = ''; a.orderAmountMax = ''; }
+  applied.value = a;
+  draft.value = { ...a, crmStatusIds: [...a.crmStatusIds], tagIds: [...a.tagIds] };
+  load(true);
 }
 
 function goPage(p: number) { page.value = p; load(); }
@@ -229,12 +566,16 @@ function toggleSort(field: string) {
 async function openClient(c: ClientListItem) {
   const full = await api.getClient(c.id).catch(() => c);
   modalClient.value = full;
+  const f = full as any;
   editForm.value = {
-    crmStatusId: (full as any).crmStatus?.id ?? '',
-    tagIds: ((full as any).tags ?? []).map((t: any) => t.id),
-    phone: (full as any).phone ?? '',
-    source: (full as any).source ?? '',
-    note: (full as any).note ?? '',
+    crmStatusId: f.crmStatus?.id ?? '',
+    tagIds: (f.tags ?? []).map((t: any) => t.id),
+    phone: f.phone ?? '',
+    email: f.email ?? '',
+    city: f.city ?? '',
+    source: f.source ?? '',
+    nextContactDate: f.nextContactDate ? f.nextContactDate.slice(0, 10) : '',
+    note: f.note ?? '',
   };
 }
 
@@ -248,22 +589,24 @@ async function saveClient() {
       crmStatusId: editForm.value.crmStatusId || null,
       tagIds: editForm.value.tagIds,
       phone: editForm.value.phone || null,
+      email: editForm.value.email || null,
+      city: editForm.value.city || null,
       source: editForm.value.source || null,
+      nextContactDate: editForm.value.nextContactDate || null,
       note: editForm.value.note || null,
     });
     const idx = items.value.findIndex((i) => i.id === modalClient.value.id);
     if (idx >= 0) items.value[idx] = updated;
     closeModal();
-  } catch { /* show error? */ } finally { saving.value = false; }
+  } catch { /* silent */ } finally { saving.value = false; }
 }
 
-function goToMessenger(c: any) {
-  if (c.conversationId) router.push('/assistant/messenger');
-  else router.push('/assistant/messenger');
+function goToMessenger(_c: any) {
+  router.push('/assistant/messenger');
   closeModal();
 }
 
-function displayName(c: ClientListItem) {
+function displayName(c: any) {
   if (c.firstName) return `${c.firstName} ${c.lastName ?? ''}`.trim();
   if (c.fio) return c.fio;
   return c.clientName ?? '—';
@@ -287,14 +630,50 @@ function formatAmount(n: number) {
 .tab-header { display: flex; align-items: center; gap: 10px; padding: 16px 20px 8px; flex-shrink: 0; }
 .tab-title { font-size: 20px; font-weight: 700; color: #1e293b; }
 .tab-count { background: #6366f1; color: #fff; border-radius: 99px; font-size: 12px; padding: 2px 8px; font-weight: 600; }
-
-.filter-bar { display: flex; gap: 8px; padding: 8px 20px; flex-shrink: 0; flex-wrap: wrap; }
-.filter-input { border: 1px solid #d1d5db; border-radius: 8px; padding: 7px 12px; font-size: 13px; outline: none; min-width: 200px; flex: 1; }
-.filter-input:focus { border-color: #6366f1; }
-.filter-select { border: 1px solid #d1d5db; border-radius: 8px; padding: 7px 10px; font-size: 13px; outline: none; background: #fff; }
-.filter-select-sm { border: 1px solid #d1d5db; border-radius: 8px; padding: 5px 8px; font-size: 12px; background: #fff; }
+.header-right { display: flex; align-items: center; gap: 10px; margin-left: auto; }
 .page-size-group { display: flex; align-items: center; gap: 6px; }
 .page-size-label { font-size: 12px; color: #64748b; white-space: nowrap; }
+.filter-select-sm { border: 1px solid #d1d5db; border-radius: 8px; padding: 5px 8px; font-size: 12px; background: #fff; }
+
+.btn-filters { border: 1px solid #d1d5db; background: #fff; border-radius: 8px; padding: 6px 14px; font-size: 13px; cursor: pointer; color: #1e293b; white-space: nowrap; }
+.btn-filters:hover { background: #f1f5f9; }
+.btn-filters.active { border-color: #6366f1; background: #eef2ff; color: #6366f1; }
+
+/* Filter panel */
+.filter-panel { background: #fff; border-bottom: 1px solid #e2e8f0; padding: 16px 20px; flex-shrink: 0; overflow-y: auto; max-height: 60vh; }
+.filter-tabs { display: flex; gap: 2px; background: #f1f5f9; border-radius: 8px; padding: 3px; margin-bottom: 14px; width: fit-content; }
+.filter-tab { border: none; background: transparent; border-radius: 6px; padding: 5px 16px; font-size: 13px; cursor: pointer; color: #64748b; }
+.filter-tab.active { background: #fff; color: #1e293b; font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+
+.filter-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px 16px; }
+.filter-field { display: flex; flex-direction: column; gap: 4px; }
+.filter-field.full-width { grid-column: 1 / -1; }
+.filter-label { font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.4px; display: flex; align-items: center; gap: 10px; }
+.filter-input { border: 1px solid #d1d5db; border-radius: 8px; padding: 7px 10px; font-size: 13px; outline: none; background: #fff; width: 100%; box-sizing: border-box; }
+.filter-input:focus { border-color: #6366f1; }
+
+.chip-group { display: flex; flex-wrap: wrap; gap: 6px; min-height: 28px; }
+.chip-check { display: flex; align-items: center; cursor: pointer; }
+.chip-check input { display: none; }
+.chip-check input:checked + .chip { box-shadow: 0 0 0 2px currentColor; font-weight: 700; }
+.chip { padding: 3px 10px; border-radius: 99px; font-size: 12px; cursor: pointer; border: 1px solid transparent; transition: box-shadow 0.1s; }
+
+.tag-match-group { display: flex; gap: 10px; font-size: 11px; font-weight: 400; text-transform: none; letter-spacing: 0; margin-left: 8px; }
+.radio-label { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #475569; cursor: pointer; font-weight: 400; text-transform: none; letter-spacing: 0; }
+.radio-group { display: flex; gap: 16px; flex-wrap: wrap; }
+
+.filter-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; padding-top: 14px; border-top: 1px solid #f1f5f9; }
+.btn-reset { border: 1px solid #d1d5db; background: #fff; border-radius: 8px; padding: 7px 16px; font-size: 13px; cursor: pointer; color: #64748b; }
+.btn-reset:hover { background: #f8fafc; }
+.btn-apply { background: #6366f1; color: #fff; border: none; border-radius: 8px; padding: 7px 20px; font-size: 13px; cursor: pointer; font-weight: 600; }
+.btn-apply:hover { background: #4f46e5; }
+
+/* Active chips row */
+.active-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 20px; flex-shrink: 0; }
+.active-chip { display: inline-flex; align-items: center; gap: 6px; background: #eef2ff; color: #4f46e5; border-radius: 99px; padding: 3px 10px 3px 12px; font-size: 12px; font-weight: 500; }
+.chip-remove { background: none; border: none; color: #6366f1; cursor: pointer; font-size: 11px; padding: 0; line-height: 1; }
+.chip-clear-all { background: none; border: 1px solid #d1d5db; border-radius: 99px; padding: 3px 10px; font-size: 12px; color: #64748b; cursor: pointer; }
+.chip-clear-all:hover { background: #f1f5f9; }
 
 .table-wrap { flex: 1; overflow: auto; padding: 0 20px 16px; }
 .data-table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
@@ -333,7 +712,7 @@ function formatAmount(n: number) {
 
 /* Modal */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 16px; }
-.modal { background: #fff; border-radius: 12px; width: 100%; max-width: 520px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
+.modal { background: #fff; border-radius: 12px; width: 100%; max-width: 540px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
 .modal-header { display: flex; align-items: center; gap: 14px; padding: 18px 20px; border-bottom: 1px solid #e5e7eb; flex-shrink: 0; }
 .modal-avatar { width: 48px; height: 48px; border-radius: 50%; background: #6366f1; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 16px; flex-shrink: 0; overflow: hidden; }
 .modal-avatar img { width: 100%; height: 100%; object-fit: cover; }
@@ -342,7 +721,7 @@ function formatAmount(n: number) {
 .modal-close { margin-left: auto; background: none; border: none; font-size: 18px; cursor: pointer; color: #94a3b8; padding: 4px; }
 
 .modal-body { padding: 20px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 16px; }
-.form-grid { display: grid; grid-template-columns: 110px 1fr; gap: 10px 14px; align-items: start; }
+.form-grid { display: grid; grid-template-columns: 120px 1fr; gap: 10px 14px; align-items: start; }
 .form-label { font-size: 12px; color: #64748b; font-weight: 500; padding-top: 8px; }
 .form-input { border: 1px solid #d1d5db; border-radius: 8px; padding: 7px 10px; font-size: 13px; outline: none; width: 100%; box-sizing: border-box; }
 .form-input:focus { border-color: #6366f1; }

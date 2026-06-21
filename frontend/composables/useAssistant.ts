@@ -10,6 +10,9 @@ export interface AssistantConversation {
   lastMessageAt: string;
   unreadCount: number;
   crmStatus: string | null;
+  assignedBotId?: string | null;
+  assignedBotName?: string | null;
+  botPaused?: boolean;
 }
 
 export interface AssistantConversationList {
@@ -43,13 +46,38 @@ export interface AssistantClient {
   id: string;
   peerId: number;
   fio: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
   phone: string | null;
+  email?: string | null;
+  birthDate?: string | null;
+  country?: string | null;
   city: string | null;
   source: string | null;
   note: string | null;
-  tags: string[];
+  tags: any[];
+  nextContactDate?: string | null;
+  lastContactAt?: string | null;
+  crmStatusId?: string | null;
+  crmStatus?: any;
   clientName: string | null;
   clientAvatar: string | null;
+}
+
+export interface AssistantReminder {
+  clientId: string;
+  peerId: number;
+  clientName: string;
+  clientAvatar: string | null;
+  nextContactDate: string;
+  isOverdue: boolean;
+  conversationId: string | null;
+}
+
+export interface AssistantBotInfo {
+  botId: string | null;
+  botName: string | null;
+  paused: boolean;
 }
 
 export function useAssistant() {
@@ -64,6 +92,28 @@ export function useAssistant() {
   function api<T>(method: string, path: string, body?: any): Promise<T> {
     return $fetch<T>(`${apiBase}/api/assistant${path}`, {
       method: method as any,
+      headers: headers(),
+      body,
+    });
+  }
+
+  function apiExt<T>(path: string): Promise<T> {
+    return $fetch<T>(`${apiBase}${path}`, {
+      headers: headers(),
+    });
+  }
+
+  function apiPatch<T>(path: string, body: any): Promise<T> {
+    return $fetch<T>(`${apiBase}${path}`, {
+      method: 'PATCH',
+      headers: headers(),
+      body,
+    });
+  }
+
+  function apiPost<T>(path: string, body: any): Promise<T> {
+    return $fetch<T>(`${apiBase}${path}`, {
+      method: 'POST',
       headers: headers(),
       body,
     });
@@ -93,6 +143,47 @@ export function useAssistant() {
 
     getClient: (peerId: number) =>
       api<AssistantClient>('GET', `/clients/${peerId}`),
+
+    getConversationBot: (conversationId: string) =>
+      api<AssistantBotInfo>('GET', `/conversations/${conversationId}/bot`),
+
+    setConversationBot: (conversationId: string, botId: string | null, paused?: boolean) =>
+      api<AssistantBotInfo>('PATCH', `/conversations/${conversationId}/bot`, { botId, paused }),
+
+    getReminders: () =>
+      api<AssistantReminder[]>('GET', '/reminders'),
+
+    // Updates client card via /api/clients/:id
+    updateClient: (clientId: string, dto: Partial<AssistantClient> & { tagIds?: string[] }) =>
+      apiPatch<AssistantClient>(`/api/clients/${clientId}`, dto),
+
+    // Phrases from /api/phrases
+    getPhrases: () =>
+      apiExt<any>('/api/phrases'),
+
+    // Bots list
+    getBots: () =>
+      apiExt<any[]>('/api/bots'),
+
+    // Directories
+    getCrmStatuses: () =>
+      apiExt<any[]>('/api/directories/crm-statuses'),
+
+    getTags: () =>
+      apiExt<any[]>('/api/directories/tags'),
+
+    // Orders for a specific client
+    getClientOrders: (clientId: string) =>
+      apiExt<any>(`/api/orders?clientId=${clientId}&pageSize=20`),
+
+    createOrder: (dto: any) =>
+      apiPost<any>('/api/orders', dto),
+
+    updateOrder: (id: string, dto: any) =>
+      apiPatch<any>(`/api/orders/${id}`, dto),
+
+    getOrderStatuses: () =>
+      apiExt<any[]>('/api/directories/order-statuses'),
 
     triggerSync: () =>
       api<{ started: boolean }>('POST', '/sync'),
