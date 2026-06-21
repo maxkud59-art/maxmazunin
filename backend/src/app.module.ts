@@ -16,6 +16,7 @@ import { PhrasesModule } from './phrases/phrases.module';
 import { BroadcastsModule } from './broadcasts/broadcasts.module';
 import { AiSettingsModule } from './ai-settings/ai-settings.module';
 import { BotsModule } from './bots/bots.module';
+import { FinanceModule } from './finance/finance.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { BotsModule } from './bots/bots.module';
     BroadcastsModule,
     AiSettingsModule,
     BotsModule,
+    FinanceModule,
   ],
 })
 export class AppModule {}

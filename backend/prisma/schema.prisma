@@ -643,3 +643,160 @@ model BotLog {
 
   @@index([botId, createdAt])
 }
+
+// ─── Finance (ДДС + ПНЛ) ─────────────────────────────────────────────────────
+
+enum FinProject {
+  EASYBOOK
+  EASYNEON
+  IZIBANYA
+  GENERAL
+}
+
+enum FinAccountType {
+  BANK
+  SAVINGS
+  CASH
+  CREDIT
+}
+
+enum FinOpType {
+  INCOME
+  EXPENSE
+  TRANSFER
+  LOAN_PRINCIPAL
+  DEPOSIT_PLACE
+  DEPOSIT_RETURN
+  DIVIDEND
+}
+
+enum FinOpSource {
+  MANUAL
+  BANK_IMPORT
+  CDEK_IMPORT
+}
+
+enum FinOrderStatus {
+  PREPAY
+  PAID_50
+  SHIPPED
+  DELIVERED
+  REFUNDED
+}
+
+enum AccrualType {
+  REVENUE
+  OPEX
+  REFUND
+  ADVANCE
+  CDEK_FEE
+  CDEK_RECEIVABLE
+}
+
+model FinAccount {
+  id             String         @id @default(cuid())
+  name           String
+  type           FinAccountType @default(BANK)
+  openingBalance Int            @default(0)
+  currentBalance Int            @default(0)
+  currency       String         @default("RUB")
+  archived       Boolean        @default(false)
+  order          Int            @default(0)
+  createdAt      DateTime       @default(now())
+  operations     FinOperation[]
+
+  @@index([archived, order])
+}
+
+model FinCategory {
+  id            String           @id @default(cuid())
+  name          String
+  type          String
+  group         String?
+  isPnl         Boolean          @default(true)
+  archived      Boolean          @default(false)
+  order         Int              @default(0)
+  subcategories FinSubcategory[]
+  operations    FinOperation[]
+}
+
+model FinSubcategory {
+  id         String         @id @default(cuid())
+  categoryId String
+  category   FinCategory    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  name       String
+  archived   Boolean        @default(false)
+  order      Int            @default(0)
+  operations FinOperation[]
+}
+
+model FinOperation {
+  id              String          @id @default(cuid())
+  date            DateTime
+  accountId       String
+  account         FinAccount      @relation(fields: [accountId], references: [id])
+  amountKopecks   Int
+  type            FinOpType       @default(INCOME)
+  categoryId      String?
+  category        FinCategory?    @relation(fields: [categoryId], references: [id])
+  subcategoryId   String?
+  subcategory     FinSubcategory? @relation(fields: [subcategoryId], references: [id])
+  project         FinProject?
+  counterparty    String?
+  comment         String?
+  isPnl           Boolean         @default(true)
+  source          FinOpSource     @default(MANUAL)
+  externalId      String?
+  linkedAccountId String?
+  finOrderId      String?
+  finOrder        FinOrder?       @relation(fields: [finOrderId], references: [id])
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@unique([source, externalId])
+  @@index([date])
+  @@index([accountId, date])
+  @@index([project, date])
+  @@index([type, date])
+}
+
+model FinOrder {
+  id                  String         @id @default(cuid())
+  clientRef           String?
+  vkClientId          String?
+  project             FinProject     @default(EASYBOOK)
+  totalAmountKopecks  Int            @default(0)
+  prepayKopecks       Int            @default(0)
+  paidKopecks         Int            @default(0)
+  cdekFeeKopecks      Int            @default(0)
+  status              FinOrderStatus @default(PREPAY)
+  shippedAt           DateTime?
+  revenueRecognizedAt DateTime?
+  cdekTrackNumber     String?
+  comment             String?
+  archived            Boolean        @default(false)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  operations     FinOperation[]
+  accrualEntries AccrualEntry[]
+
+  @@index([status])
+  @@index([shippedAt])
+  @@index([project])
+}
+
+model AccrualEntry {
+  id            String      @id @default(cuid())
+  period        DateTime
+  type          AccrualType
+  amountKopecks Int
+  project       FinProject  @default(EASYBOOK)
+  finOrderId    String?
+  finOrder      FinOrder?   @relation(fields: [finOrderId], references: [id])
+  description   String?
+  createdAt     DateTime    @default(now())
+
+  @@index([period, project])
+  @@index([type, period])
+}

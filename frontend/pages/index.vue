@@ -31,7 +31,7 @@ const experiments = [
   { label: 'Мессенджер',       icon: '💬',  soon: false, href: '/messenger' },
   { label: 'ИИ-ассистент',     icon: '🤖',  soon: false, href: '/assistant' },
   { label: 'Авто-макет книг',  icon: '📖',  soon: false, href: '/book-layout' },
-  { label: 'Финансы',          icon: '📈',  soon: true },
+  { label: 'Финансы',          icon: '📈',  soon: false, href: '/finance/dashboard' },
 ];
 </script>
 

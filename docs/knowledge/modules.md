@@ -363,6 +363,66 @@ CSS в ячейке: `object-fit: cover; object-position: {panX}% {panY}%; trans
 
 ---
 
+---
+
+## finance — Финансы (ДДС + ПНЛ) [добавлен 2026-06-21]
+
+**Файлы:** `backend/src/finance/`, `frontend/pages/finance.vue`, `frontend/pages/finance/`, `frontend/composables/useFinance.ts`
+
+### Методология
+
+- **ДДС** (кассовый метод) — фактическое движение денег по счетам. Не разделяет P&L/non-P&L.
+- **ПНЛ** (метод начисления) — выручка признаётся в момент перехода заказа `FinOrder` в статус `SHIPPED` (выдача в СДЭК), а не при получении оплаты. Авансы, тело кредита, переводы, депозиты = не выручка. Расходы — операции с `isPnl=true`.
+- Суммы хранятся в **копейках (Int)** — нет ошибок округления Float.
+
+### Сущности
+
+| Модель | Назначение |
+|--------|-----------|
+| `FinAccount` | Счёт (банк, наличные, копилка). `currentBalance` = `openingBalance` + сумма всех операций |
+| `FinCategory` / `FinSubcategory` | Статьи ДДС (type=income/expense/..., group, isPnl) |
+| `FinOperation` | Операция: дата, счёт, сумма, статья, проект, контрагент, комментарий, тип, isPnl, источник (MANUAL/BANK_IMPORT/CDEK_IMPORT). Уникальный индекс (source, externalId) — идемпотентный импорт |
+| `FinOrder` | Заказ для ПНЛ. Статус: PREPAY → PAID_50 → SHIPPED → DELIVERED / REFUNDED |
+| `AccrualEntry` | Начисление: создаётся при SHIPPED (REVENUE) и REFUNDED (REFUND). Основа ПНЛ-отчёта |
+
+### Seed по умолчанию (OnModuleInit, idempotent)
+
+5 счетов: Основной (BANK), Счёт 4658 (BANK), Счёт ИзиБук (BANK), Копилка (SAVINGS), Копилка 2 (SAVINGS).
+~25 категорий по группам: Доходы от EasyBook, Доходы от EasyNeon, Доходы от ИзиБаня, Маркетинг, Операционные расходы, Персонал, Налоги.
+
+### API (все под JwtAuthGuard)
+
+| Группа | Эндпоинты |
+|--------|----------|
+| Счета | `GET/POST /api/finance/accounts`, `PATCH /api/finance/accounts/:id` |
+| Статьи | `GET/POST /api/finance/categories`, `PATCH …/:id`, `POST …/:id/subcategories`, `PATCH /api/finance/subcategories/:id` |
+| Операции | `GET/POST /api/finance/operations`, `PATCH/DELETE …/:id` |
+| Заказы ПНЛ | `GET/POST /api/finance/orders`, `PATCH/DELETE …/:id` |
+| Отчёты | `GET /api/finance/reports/dashboard`, `.../cashflow`, `.../pnl` |
+| Импорт | `POST /api/finance/import/bank`, `.../cdek` |
+| Здоровье | `GET /api/finance/integrations/health` |
+
+### Адаптеры (заглушки)
+
+- `bank.adapter.ts` — `fetchTransactions(from, to)`. Реализовать: вставить банковский API-код, токен — `BANK_API_TOKEN` в `.env`.
+- `cdek.adapter.ts` — `fetchDeliveries(from, to)`, `fetchByTrackNumber(track)`. Токены — `CDEK_CLIENT_ID` + `CDEK_CLIENT_SECRET`.
+
+### Frontend
+
+- `/finance/dashboard` — KPI-дашборд (ДДС + ПНЛ за период, остатки по счетам)
+- `/finance/operations` — CRUD операций с фильтрами и пагинацией
+- `/finance/cashflow` — отчёт ДДС (остатки по счетам + разбивка по статьям)
+- `/finance/pnl` — П&Л: чистая выручка, расходы по группам, чистая прибыль, рентабельность, начисления
+- `/finance/orders` — управление заказами (PREPAY→SHIPPED признаёт выручку)
+- `/finance/accounts` — CRUD счетов
+- `/finance/categories` — CRUD статей и подстатей
+
+### Проекты
+
+`FinProject` enum: `EASYBOOK | EASYNEON | IZIBANYA | GENERAL`
+
+---
+
 ## Prisma-схема (сводка)
 
 ```

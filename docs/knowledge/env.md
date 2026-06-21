@@ -16,13 +16,17 @@
 | `MESSENGER_TEST_MODE` | нет | `true` → все ограничения мессенджера выключены (default: `true` в .env.example) |
 | `GENDIR_EMAIL` | нет | Email кому дать роль GEN_DIRECTOR при seed |
 | `VK_API_PLATFORM` | нет | `new` (ads.vk.com) или `old` (vk.com API) (default: `new`) |
-| `VK_ACCESS_TOKEN` | нет | Токен доступа VK Ads API |
-| `VK_ACCOUNT_ID` | нет | ID аккаунта VK (только для `VK_API_PLATFORM=old`) |
+| `VK_ADS_TOKEN` | нет | Токен рекламного кабинета VK с правом **ads** (ads.vk.com → API). НЕ путать с VK_GROUP_TOKEN — это разные токены! |
+| `VK_ACCESS_TOKEN` | нет | Устаревшее: используйте `VK_ADS_TOKEN`. Читается как fallback если `VK_ADS_TOKEN` не задан. |
+| `VK_ACCOUNT_ID` | нет | ID аккаунта VK (только для `VK_API_PLATFORM=old`; при `new` аккаунты загружаются через /sync-accounts) |
 | `POLL_INTERVAL_MINUTES` | нет | Интервал сбора снимков VK в минутах (default: `5`) |
 | `REDIS_ENABLED` | нет | `true` чтобы включить Redis (default: `false`) |
 | `REDIS_URL` | нет | Redis DSN (нужен только при `REDIS_ENABLED=true`) |
 | `VK_GROUP_TOKEN` | нет | Community access token с правом messages (ИИ-ассистент) |
 | `VK_GROUP_ID` | нет | Числовой ID сообщества VK (ИИ-ассистент) |
+| `BANK_API_TOKEN` | нет | API-токен банка для импорта выписок (Finance модуль). Только на сервере, не в коде/гите. |
+| `CDEK_CLIENT_ID` | нет | Client ID СДЭК API (Finance модуль). Только на сервере. |
+| `CDEK_CLIENT_SECRET` | нет | Client Secret СДЭК API (Finance модуль). Только на сервере. |
 
 ## Prod docker-compose (`docker-compose.prod.yml`)
 
