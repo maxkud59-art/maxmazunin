@@ -32,6 +32,9 @@ const experiments = [
   { label: 'ИИ-ассистент',     icon: '🤖',  soon: false, href: '/assistant' },
   { label: 'Авто-макет книг',  icon: '📖',  soon: false, href: '/book-layout' },
   { label: 'Финансы',          icon: '📈',  soon: false, href: '/finance/dashboard' },
+  { label: 'CRM-данные',       icon: '🗂️',  soon: false, href: '/crm' },
+  { label: 'Воронка',          icon: '🔽',  soon: false, href: '/analytics/funnel' },
+  { label: 'A/B тесты',        icon: '🧪',  soon: false, href: '/experiments' },
 ];
 </script>
 

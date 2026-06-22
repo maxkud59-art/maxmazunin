@@ -1,5 +1,27 @@
 # Журнал архитектурных решений
 
+## 2026-06-23 | Dialog Analysis + A/B Experiments subsystem
+
+**Решение:** Два новых модуля: `dialog-analysis` (разметка воронки через LLM) и `experiments` (A/B движок), плюс `analytics` (funnel endpoint).
+
+**Ключевые архитектурные решения:**
+- **MockLLM** детерминирован по sha256(conversationId) → стабильные исходы в smoke-тестах без API-ключей. `LLM_MODE=anthropic` + `ANTHROPIC_API_KEY` → реальный LLM (stub, готов к подключению).
+- **Prefilter:** <2 клиентских сообщений → rule `CONTACT`; нет прайса-ключевых-слов → rule `REPLIED`; 3% QA-выборка → в LLM. Экономит 60–70% LLM-вызовов.
+- **Баланс внутри менеджера:** для каждого (experimentId, managerId) выбирается вариант с min счётчиком → перекос ≤ 1.
+- **Значимость:** minSample AND p<pThreshold AND стабильный знак ≥ 3 дня (ExperimentResultSnapshot). Победитель — ТОЛЬКО через POST /experiments/:id/decide, никогда автоматически.
+- **DAILY_LLM_BUDGET:** LlmBudgetLog (@@unique date) — worker останавливается при исчерпании.
+- **Smoke test:** `npm run smoke:experiments` — зелёный без внешних ключей (MockLLM + seed data).
+
+**Аддитивные изменения схемы:** +3 поля в Order (paymentStatus/paidAt/managerId) + 4 enum + 5 новых моделей. Никаких DROP/TRUNCATE.
+
+## 2026-06-23 | CRM — второй Prisma-клиент для read-only доступа к CRM-БД
+
+**Решение:** Модуль `crm` использует отдельный Prisma-клиент (`PrismaCrmService`) сгенерированный из `prisma/crm.prisma` с `output = "../src/generated/crm-client"`. Указывает на отдельную БД через `CRM_DATABASE_URL`. Собственная модель `User` не конфликтует с `User` основной схемы.
+
+**Почему:** CRM-схема имеет несовместимую модель `User` (Int ID vs String cuid в основной). Merging невозможен без переименования. Раздельный клиент — нулевой риск конфликтов, явная изоляция read-only данных.
+
+**Генерация клиента:** `npm run db:generate:crm` (добавлено в package.json). Папка `src/generated/crm-client/` — не коммитить (в .gitignore добавить).
+
 ## 2026-06-21 | Finance — ДДС в копейках, раздельные отчёты, выручка по отгрузке
 
 **Решение:** Суммы хранятся в Int (копейки), не Float/Decimal. ДДС и ПНЛ — отдельные отчёты. Выручка признаётся при переводе `FinOrder` в статус `SHIPPED` (создаётся `AccrualEntry` типа REVENUE). `currentBalance` — денормализованное поле, пересчитывается после каждой операции.

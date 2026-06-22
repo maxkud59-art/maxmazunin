@@ -344,8 +344,9 @@ model VkConversation {
   botPaused       Boolean   @default(false)
   updatedAt       DateTime  @updatedAt
 
-  messages  VkMessage[]
-  client    VkClient?
+  messages       VkMessage[]
+  client         VkClient?
+  dialogAnalyses DialogAnalysis[]
 
   @@index([lastMessageAt])
 }
@@ -439,20 +440,38 @@ model OrderStatus {
 // ─── ИИ-ассистент: Заказы ─────────────────────────────────────────────────────
 
 model Order {
-  id            String       @id @default(cuid())
-  number        Int          @default(autoincrement())
+  id            String        @id @default(cuid())
+  number        Int           @default(autoincrement())
   clientId      String
-  client        VkClient     @relation(fields: [clientId], references: [id])
+  client        VkClient      @relation(fields: [clientId], references: [id])
   orderStatusId String?
-  orderStatus   OrderStatus? @relation(fields: [orderStatusId], references: [id])
+  orderStatus   OrderStatus?  @relation(fields: [orderStatusId], references: [id])
   amount        Float?
   items         String?
   comment       String?
-  createdAt     DateTime     @default(now())
-  archived      Boolean      @default(false)
+  createdAt     DateTime      @default(now())
+  archived      Boolean       @default(false)
+
+  // Payment lifecycle (additive 2026-06-23)
+  paymentStatus PaymentStatus @default(ORDERED)
+  paidAt        DateTime?
+  managerId     String?
+
+  dialogAnalyses     DialogAnalysis[]
+  experimentAssigns  ExperimentAssignment[]
 
   @@index([clientId])
   @@index([createdAt])
+  @@index([paymentStatus])
+  @@index([managerId, paymentStatus])
+  @@index([paidAt])
+}
+
+enum PaymentStatus {
+  ORDERED
+  PREPAID
+  PAID_FULL
+  LOST
 }
 
 // ─── ИИ-ассистент: Быстрые фразы ─────────────────────────────────────────────
@@ -799,4 +818,157 @@ model AccrualEntry {
 
   @@index([period, project])
   @@index([type, period])
+}
+
+// ─── Стадийная разметка диалогов + Движок экспериментов ──────────────────────
+
+enum DialogStage {
+  CONTACT
+  REPLIED
+  PRICE_SHOWN
+  OBJECTION
+  REBUTTAL
+  ORDERED
+  PREPAID
+  PAID_FULL
+}
+
+enum ObjectionType {
+  NONE
+  EXPENSIVE
+  THINKING
+  JUST_ASKING
+  IGNORED_AFTER_LINK
+  TIMING
+  OTHER
+}
+
+enum ExperimentStatus {
+  DRAFT
+  RUNNING
+  STOPPED
+  DECIDED
+}
+
+enum ExperimentMetric {
+  CONV_TO_PAID
+}
+
+// Сайдкар: размеченный диалог. Идемпотентен по (conversationId, analysisVersion).
+model DialogAnalysis {
+  id              String        @id @default(cuid())
+  conversationId  String
+  orderId         String?
+  managerId       String?
+  reachedStage    DialogStage
+  deathStage      DialogStage?
+  objectionType   ObjectionType @default(NONE)
+  dayInDay        Boolean       @default(false)
+  hadCTA          Boolean       @default(false)
+  confidence      Float         @default(1.0)
+  analysisVersion String        @default("v1")
+  model           String        @default("mock")
+  needsReview     Boolean       @default(false)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  conversation  VkConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  order         Order?         @relation(fields: [orderId], references: [id])
+
+  @@unique([conversationId, analysisVersion])
+  @@index([managerId, reachedStage])
+  @@index([reachedStage])
+  @@index([deathStage])
+  @@index([createdAt])
+}
+
+model Experiment {
+  id                   String           @id @default(cuid())
+  name                 String
+  hypothesis           String           @default("")
+  stageFrom            DialogStage
+  stageTo              DialogStage
+  status               ExperimentStatus @default(DRAFT)
+  metric               ExperimentMetric @default(CONV_TO_PAID)
+  maturationDays       Int              @default(7)
+  minSamplePerVariant  Int              @default(100)
+  pThreshold           Float            @default(0.05)
+  startedAt            DateTime?
+  decidedAt            DateTime?
+  winnerVariantId      String?
+  createdById          String
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  variants    ExperimentVariant[]
+  assignments ExperimentAssignment[]
+  snapshots   ExperimentResultSnapshot[]
+}
+
+model ExperimentVariant {
+  id           String @id @default(cuid())
+  experimentId String
+  name         String
+  scriptRef    String @default("")
+  isControl    Boolean @default(false)
+  weight       Int    @default(1)
+  createdAt    DateTime @default(now())
+
+  experiment   Experiment             @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  assignments  ExperimentAssignment[]
+  snapshots    ExperimentResultSnapshot[]
+
+  @@index([experimentId])
+}
+
+// Сделка попадает в эксперимент один раз. Перекос внутри менеджера ≤ 1.
+model ExperimentAssignment {
+  id           String   @id @default(cuid())
+  experimentId String
+  variantId    String
+  orderId      String
+  managerId    String
+  assignedAt   DateTime @default(now())
+
+  experiment Experiment        @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  variant    ExperimentVariant @relation(fields: [variantId], references: [id])
+  order      Order             @relation(fields: [orderId], references: [id])
+
+  @@unique([experimentId, orderId])
+  @@index([experimentId, managerId])
+  @@index([variantId])
+}
+
+// Дневная заморозка результатов (паттерн daily-close).
+model ExperimentResultSnapshot {
+  id           String   @id @default(cuid())
+  experimentId String
+  variantId    String
+  snapshotDate DateTime
+  nAssigned    Int      @default(0)
+  nMatured     Int      @default(0)
+  nPaid        Int      @default(0)
+  revenuePaid  Float    @default(0)
+  convToPaid   Float    @default(0)
+  zVsControl   Float?
+  pValue       Float?
+  createdAt    DateTime @default(now())
+
+  experiment Experiment        @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  variant    ExperimentVariant @relation(fields: [variantId], references: [id])
+
+  @@unique([experimentId, variantId, snapshotDate])
+  @@index([experimentId, snapshotDate])
+}
+
+// Дневной счётчик LLM-вызовов для бюджетного гейта.
+model LlmBudgetLog {
+  id        String   @id @default(cuid())
+  date      DateTime
+  calls     Int      @default(0)
+  budget    Int      @default(0)
+  stopped   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@unique([date])
 }

@@ -8,10 +8,13 @@
     "start:dev": "nest start --watch",
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
+    "db:generate:crm": "prisma generate --schema=prisma/crm.prisma",
     "db:studio": "prisma studio",
     "admin:create": "ts-node -r tsconfig-paths/register prisma/seed.ts",
     "seed:cabinets": "ts-node -r tsconfig-paths/register prisma/seed-cabinets.ts",
-    "seed:phrases": "ts-node -r tsconfig-paths/register prisma/seed-phrases.ts"
+    "seed:phrases": "ts-node -r tsconfig-paths/register prisma/seed-phrases.ts",
+    "seed:experiments": "ts-node -r tsconfig-paths/register prisma/seed-experiments.ts",
+    "smoke:experiments": "ts-node -r tsconfig-paths/register scripts/smoke-experiments.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",

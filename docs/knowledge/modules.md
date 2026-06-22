@@ -423,6 +423,41 @@ CSS в ячейке: `object-fit: cover; object-position: {panX}% {panY}%; trans
 
 ---
 
+---
+
+## crm — CRM-данные (read-only) [добавлен 2026-06-23]
+
+**Файлы:** `backend/src/crm/`, `frontend/pages/crm.vue`
+
+### Назначение
+
+Read-only доступ к данным production CRM (EasyBook) через отдельную Prisma-клиентскую библиотеку. Данные в отдельной БД (`CRM_DATABASE_URL`). Локально — база `crm_explorer`, восстановленная из дампа.
+
+### Второй Prisma-клиент
+
+`backend/prisma/crm.prisma` с `output = "../node_modules/@prisma/crm-client"`.  
+Сервис: `PrismaCrmService extends PrismaClient` (из `@prisma/crm-client`).  
+Генерация: `npm run db:generate:crm` → `npx prisma generate --schema=prisma/crm.prisma`.
+
+Причина двух клиентов: схемы конфликтуют (разные типы `User.id`: cuid vs autoincrement). Подробнее в `decisions.md` (2026-06-23).
+
+### Эндпоинты (все под JwtAuthGuard)
+
+| Эндпоинт | Описание |
+|----------|---------|
+| `GET /api/crm/deals` | Список сделок (пагинация, поиск, фильтры) |
+| `GET /api/crm/deals/statuses` | Уникальные статусы сделок |
+| `GET /api/crm/deals/groups` | Группы (команды) |
+| `GET /api/crm/deals/workspaces` | Воркспейсы |
+
+Query-параметры `GET /api/crm/deals`: `page`, `limit` (max 200), `search`, `status`, `groupId`, `workSpaceId`, `periodFrom` (YYYY-MM), `periodTo` (YYYY-MM).
+
+### Frontend
+
+`frontend/pages/crm.vue` — таблица сделок с поиском, фильтрами, пагинацией. Использует `useNuxtApp().$api` (axios с JWT Bearer).
+
+---
+
 ## Prisma-схема (сводка)
 
 ```
@@ -598,3 +633,63 @@ VkConversation → VkClient (1:1)
 - `from_id = -group_id` → исходящее (OUT) от сообщества
 - CRM-поле `crmStatus` в `VkConversation` — устаревшее (string), новое — `VkClient.crmStatusId` (FK)
 - Schema обновляется через `prisma db push` (не migrate deploy) — без миграционных файлов
+
+---
+
+## dialog-analysis
+
+**Файлы:** `backend/src/dialog-analysis/`
+
+| Эндпоинт | Метод | Описание |
+|----------|-------|---------|
+| `POST /api/dialog-analysis/run` | ADMIN | Запустить пакетную разметку (limit=200) |
+| `GET /api/dialog-analysis/stats` | ADMIN | Статистика разметки по этапам |
+
+**Cron:** каждые 10 минут — `analysis.worker.ts` обрабатывает пачку из 50 диалогов без `DialogAnalysis`.
+
+**LLM-стратегия:**
+- `LLM_MODE=mock` (default) → MockLLM, детерминирован по sha256(conversationId)
+- `LLM_MODE=anthropic` + `ANTHROPIC_API_KEY` → AnthropicLLM stub (готов к реализации)
+- Автофоллбек на mock если ключ отсутствует
+- `DAILY_LLM_BUDGET` (default 1000) — счётчик в LlmBudgetLog
+- `QA_SAMPLE_PCT` (default 3) — % диалогов, которые всегда идут в LLM несмотря на prefilter
+
+**Prefilter (без LLM):**
+- 0 клиентских сообщений → `CONTACT`
+- 0 ответов менеджера → `CONTACT`
+- Нет ценовых ключевых слов + < 3 клиентских сообщения → `REPLIED`
+
+---
+
+## experiments
+
+**Файлы:** `backend/src/experiments/`
+
+| Эндпоинт | Метод | Описание |
+|----------|-------|---------|
+| `POST /api/experiments` | Создать DRAFT эксперимент |
+| `GET /api/experiments` | Список |
+| `GET /api/experiments/:id` | Один эксперимент + снапшоты |
+| `GET /api/experiments/:id/results` | Текущие результаты (live) |
+| `POST /api/experiments/:id/start` | DRAFT → RUNNING |
+| `POST /api/experiments/:id/stop` | → STOPPED |
+| `POST /api/experiments/:id/decide` | **Только человек** → DECIDED + winnerVariantId |
+| `POST /api/experiments/:id/assign` | Назначить вариант сделке |
+| `GET /api/experiments/:id/bias-check` | Проверка перекоса по менеджерам |
+| `POST /api/experiments/:id/snapshot` | Ручной снапшот (cron делает в полночь) |
+
+**Правила значимости:** `nMatured ≥ minSamplePerVariant` AND `p < pThreshold` AND знак z стабилен ≥ 3 дня.
+
+**Smoke test:** `npm run smoke:experiments` — 29 проверок без API-ключей.
+
+---
+
+## analytics
+
+**Файлы:** `backend/src/analytics/`
+
+| Эндпоинт | Параметры | Описание |
+|----------|-----------|---------|
+| `GET /api/analytics/funnel` | `from`, `to`, `managerId` | Воронка по `DialogAnalysis` |
+
+Возвращает: этапы (count/conv%), возражения, CTA-влияние, день-в-день, breakdown по менеджерам.

@@ -17,6 +17,10 @@ import { BroadcastsModule } from './broadcasts/broadcasts.module';
 import { AiSettingsModule } from './ai-settings/ai-settings.module';
 import { BotsModule } from './bots/bots.module';
 import { FinanceModule } from './finance/finance.module';
+import { CrmModule } from './crm/crm.module';
+import { DialogAnalysisModule } from './dialog-analysis/dialog-analysis.module';
+import { ExperimentsModule } from './experiments/experiments.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 
 @Module({
   imports: [
@@ -38,6 +42,10 @@ import { FinanceModule } from './finance/finance.module';
     AiSettingsModule,
     BotsModule,
     FinanceModule,
+    CrmModule,
+    DialogAnalysisModule,
+    ExperimentsModule,
+    AnalyticsModule,
   ],
 })
 export class AppModule {}
