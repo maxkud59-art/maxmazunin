@@ -1,5 +1,17 @@
 # Журнал архитектурных решений
 
+## 2026-06-26 | Audience module — VK ad funnel + retarget orchestration
+
+**Решение:** Модуль `audience` собирает сквозную рекламную воронку (VIDEO_25 → PAYMENT), управляет VK-сегментами за интерфейсом `VkAdsClientInterface`, авто-дожимает «молчунов» через существующий `VkMessengerClient`.
+
+**Ключевые решения:**
+- `VK_SYNC_ENABLED=false` (дефолт) → `DryRunVkAdsClient`: нет сетевых вызовов, всё пишется как `DRY_RUN` в `VkSyncLog`. Переключить при наличии живых ключей.
+- Хуки `message_allow`/`message_new` внедрены в `BotEngineService` через `@Optional() VkCallbackService` — fire-and-forget, не блокируют бот-логику. `BotsModule` использует `forwardRef(() => AudienceModule)`.
+- `dedupeKey` в `AdFunnelEvent` — идемпотентность: повторный POST с тем же ключом → 201 без дублей.
+- `AdContact.silentFollowupSent` — гарантия ровно одного авто-сообщения молчуну.
+- `RealVkAdsClient` — заглушка с `// TODO(vk-docs):` на каждом методе, нужна сверка с актуальной VK Ads API docs.
+- Аддитивная схема: 5 новых таблиц + 5 новых enum, существующие не тронуты.
+
 ## 2026-06-23 | Dialog Analysis + A/B Experiments subsystem
 
 **Решение:** Два новых модуля: `dialog-analysis` (разметка воронки через LLM) и `experiments` (A/B движок), плюс `analytics` (funnel endpoint).

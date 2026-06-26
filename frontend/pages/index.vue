@@ -35,6 +35,7 @@ const experiments = [
   { label: 'CRM-данные',       icon: '🗂️',  soon: false, href: '/crm' },
   { label: 'Воронка',          icon: '🔽',  soon: false, href: '/analytics/funnel' },
   { label: 'A/B тесты',        icon: '🧪',  soon: false, href: '/experiments' },
+  { label: 'Аудитории',        icon: '🎯',  soon: false, href: '/audience' },
 ];
 </script>
 

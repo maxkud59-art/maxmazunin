@@ -1,8 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { VkMessengerClient } from '../assistant/vk-messenger.client';
 import { BotType, BotStepType, ScenarioStateStatus, Bot, BotStep } from '@prisma/client';
+import { VkCallbackService } from '../audience/services/vk-callback.service';
 
 export interface VkEvent {
   type: 'message_new' | 'message_event' | 'message_allow' | 'message_deny';
@@ -25,6 +26,7 @@ export class BotEngineService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly vk: VkMessengerClient,
+    @Optional() private readonly audienceCallback: VkCallbackService | null = null,
   ) {}
 
   /** Entry point: called by VkBotLongPollService for each VK event */
@@ -47,6 +49,19 @@ export class BotEngineService {
   }
 
   private async _dispatch(ev: VkEvent) {
+    // Audience funnel hooks — fire-and-forget, never block bot logic
+    if (this.audienceCallback) {
+      if (ev.type === 'message_allow') {
+        this.audienceCallback.onMessageAllow(ev.peerId).catch((e: Error) =>
+          this.logger.error('audienceCallback.onMessageAllow failed: %s', e.message),
+        );
+      } else if (ev.type === 'message_new') {
+        this.audienceCallback.onMessageNew(ev.peerId).catch((e: Error) =>
+          this.logger.error('audienceCallback.onMessageNew failed: %s', e.message),
+        );
+      }
+    }
+
     // Check per-dialog bot assignment
     const conv = await this.prisma.vkConversation.findUnique({
       where: { peerId: ev.peerId },

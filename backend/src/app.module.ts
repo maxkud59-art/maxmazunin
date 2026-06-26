@@ -21,6 +21,7 @@ import { CrmModule } from './crm/crm.module';
 import { DialogAnalysisModule } from './dialog-analysis/dialog-analysis.module';
 import { ExperimentsModule } from './experiments/experiments.module';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { AudienceModule } from './audience/audience.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
     DialogAnalysisModule,
     ExperimentsModule,
     AnalyticsModule,
+    AudienceModule,
   ],
 })
 export class AppModule {}

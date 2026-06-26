@@ -693,3 +693,25 @@ VkConversation → VkClient (1:1)
 | `GET /api/analytics/funnel` | `from`, `to`, `managerId` | Воронка по `DialogAnalysis` |
 
 Возвращает: этапы (count/conv%), возражения, CTA-влияние, день-в-день, breakdown по менеджерам.
+
+---
+
+## audience
+
+**Файлы:** `backend/src/audience/`
+
+| Эндпоинт | Описание |
+|----------|---------|
+| `POST /api/audience/events` | Принять рекламное событие (идемпотентно по dedupeKey) |
+| `GET /api/audience/funnel` | Воронка: counts по 9 этапам + конверсии + biggest drop |
+| `GET /api/audience` | Список сегментов с memberCount и статусом последнего синка |
+| `POST /api/audience` | Создать сегмент |
+| `GET /api/audience/:id` | Один сегмент + история синков |
+| `POST /api/audience/:id/sync` | Синхронизировать сегмент с VK Ads |
+| `POST /api/audience/lal/build` | Собрать LaL-сид из плательщиков и синхронизировать |
+
+**Переменные:** `VK_SYNC_ENABLED` (false=DRY_RUN), `VK_ADS_TOKEN`, `SILENT_FOLLOWUP_MINUTES` (30), `SILENT_FOLLOWUP_TEXT`.
+
+**Cron:** followup молчунов каждые 10 мин, custom audience sync каждые 6 ч, LaL refresh в 03:00.
+
+**Хуки в BotEngine:** `message_allow` → `DIALOG_ALLOWED`, `message_new` → `FIRST_MESSAGE` (fire-and-forget).

@@ -972,3 +972,132 @@ model LlmBudgetLog {
 
   @@unique([date])
 }
+
+// ─── Audience / Ad Funnel module (additive 2026-06-26) ────────────────────────
+
+enum AdFunnelStage {
+  VIDEO_25
+  VIDEO_50
+  VIDEO_75
+  VIDEO_100
+  AD_CLICK
+  DIALOG_ALLOWED
+  FIRST_MESSAGE
+  LEAD
+  PAYMENT
+}
+
+enum AdEventSource {
+  VK_ADS_API
+  VK_CALLBACK
+  PIXEL
+  CRM
+}
+
+enum AdAudienceKind {
+  RETARGET_VK
+  CUSTOM_UPLOAD
+  LAL
+}
+
+enum VkSyncAction {
+  CREATE
+  UPDATE
+  UPLOAD
+  LAL
+}
+
+enum VkSyncStatus {
+  DRY_RUN
+  OK
+  ERROR
+}
+
+// Каждое уникальное рекламное событие — одна строка (dedupe по dedupeKey).
+model AdFunnelEvent {
+  id          String         @id @default(cuid())
+  ts          DateTime       @default(now())
+  stage       AdFunnelStage
+  source      AdEventSource
+  vkUserId    String?
+  campaignId  String?
+  adId        String?
+  dedupeKey   String         @unique
+  raw         Json           @default("{}")
+
+  @@index([ts])
+  @@index([stage])
+  @@index([vkUserId])
+}
+
+// Источник правды по «нашим» людям — тем, чей vk_id мы знаем из Callback API.
+model AdContact {
+  id                 String        @id @default(cuid())
+  vkUserId           String        @unique
+  firstSeenAt        DateTime      @default(now())
+  lastStage          AdFunnelStage
+  lastStageAt        DateTime      @default(now())
+  isWriter           Boolean       @default(false)
+  isLead             Boolean       @default(false)
+  isPayer            Boolean       @default(false)
+  crmConversationId  String?
+  silentFollowupSent Boolean       @default(false)
+  updatedAt          DateTime      @updatedAt
+
+  memberships AudienceMembership[]
+
+  @@index([lastStage])
+  @@index([isWriter])
+  @@index([isPayer])
+}
+
+// Рекламные сегменты (ретаргет / кастом / LAL).
+model AdAudience {
+  id            String         @id @default(cuid())
+  key           String         @unique
+  title         String
+  kind          AdAudienceKind
+  rule          Json           @default("{}")
+  vkSegmentId   String?
+  status        String         @default("ACTIVE")
+  lastSyncedAt  DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  memberships AudienceMembership[]
+  syncLogs    VkSyncLog[]
+}
+
+// Кто входит в сегмент CUSTOM_UPLOAD (только для тех, чей vkUserId нам известен).
+model AudienceMembership {
+  id          String    @id @default(cuid())
+  audienceId  String
+  adContactId String
+  addedAt     DateTime  @default(now())
+  syncedAt    DateTime?
+
+  audience   AdAudience @relation(fields: [audienceId], references: [id], onDelete: Cascade)
+  adContact  AdContact  @relation(fields: [adContactId], references: [id], onDelete: Cascade)
+
+  @@unique([audienceId, adContactId])
+  @@index([audienceId])
+  @@index([adContactId])
+}
+
+// Лог каждого вызова VK Ads API (реального или DRY_RUN).
+model VkSyncLog {
+  id         String        @id @default(cuid())
+  audienceId String?
+  action     VkSyncAction
+  request    Json
+  response   Json?
+  status     VkSyncStatus
+  error      String?
+  ts         DateTime      @default(now())
+
+  audience   AdAudience?  @relation(fields: [audienceId], references: [id], onDelete: SetNull)
+
+  @@index([ts])
+  @@index([audienceId])
+  @@index([status])
+}
