@@ -187,6 +187,7 @@ onMounted(load);
 </script>
 
 <style scoped>
+@reference "tailwindcss";
 .input-sm { @apply border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500; }
 .btn-primary { @apply bg-indigo-600 text-white px-4 py-1.5 rounded-lg hover:bg-indigo-700 font-medium transition; }
 </style>

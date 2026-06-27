@@ -184,6 +184,7 @@ onMounted(load);
 </script>
 
 <style scoped>
+@reference "tailwindcss";
 .btn-primary { @apply bg-indigo-600 text-white px-4 py-1.5 rounded-lg hover:bg-indigo-700 font-medium transition; }
 .btn-danger { @apply bg-red-600 text-white px-4 py-1.5 rounded-lg hover:bg-red-700 font-medium transition; }
 </style>

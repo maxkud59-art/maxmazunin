@@ -234,6 +234,7 @@ onMounted(() => { loadFunnel(); loadSegments(); });
 </script>
 
 <style scoped>
+@reference "tailwindcss";
 .input-sm { @apply border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500; }
 .input { @apply border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500; }
 .label { @apply block text-sm font-medium text-gray-700 mb-1; }
