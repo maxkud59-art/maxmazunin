@@ -5,6 +5,10 @@ import { PrismaCrmService } from './prisma-crm.service';
 export class CrmService {
   constructor(private prisma: PrismaCrmService) {}
 
+  private notConfigured() {
+    return !this.prisma.configured;
+  }
+
   async findDeals(params: {
     page: number;
     limit: number;
@@ -15,6 +19,7 @@ export class CrmService {
     periodFrom?: string;
     periodTo?: string;
   }) {
+    if (this.notConfigured()) return { data: [], total: 0, page: params.page, limit: params.limit, pages: 0 };
     const { page, limit, search, status, groupId, workSpaceId, periodFrom, periodTo } = params;
     const skip = (page - 1) * limit;
 
@@ -69,6 +74,7 @@ export class CrmService {
   }
 
   async getDealStatuses() {
+    if (this.notConfigured()) return [];
     const rows = await this.prisma.deal.findMany({
       where: { deletedAt: null },
       select: { status: true },
@@ -78,6 +84,7 @@ export class CrmService {
   }
 
   async getGroups() {
+    if (this.notConfigured()) return [];
     return this.prisma.group.findMany({
       where: { deletedAt: null },
       select: { id: true, title: true },
@@ -86,6 +93,7 @@ export class CrmService {
   }
 
   async getWorkSpaces() {
+    if (this.notConfigured()) return [];
     return this.prisma.workSpace.findMany({
       where: { deletedAt: null },
       select: { id: true, title: true },
