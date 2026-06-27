@@ -39,3 +39,4 @@
 - [gotchas.md](docs/knowledge/gotchas.md) — известные проблемы и их фиксы
 - [env.md](docs/knowledge/env.md) — переменные окружения и их назначение
 - [glossary.md](docs/knowledge/glossary.md) — доменные термины
+- [ai-assistant.md](docs/knowledge/ai-assistant.md) — AI-ассистент: guardrails, SLA, LifecycleStage, стадии сделки

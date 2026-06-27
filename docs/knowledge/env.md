@@ -7,6 +7,7 @@
 | Переменная | Обязательная | Описание |
 |-----------|:---:|---------|
 | `DATABASE_URL` | да | PostgreSQL DSN: `postgresql://user:pass@host:5432/db` |
+| `CRM_DATABASE_URL` | нет | DSN для CRM-БД (read-only, модуль crm). Локально: `postgresql://maksim@localhost:5432/crm_explorer` |
 | `JWT_SECRET` | да | Секрет подписи JWT, минимум 32 символа |
 | `JWT_EXPIRES_IN` | нет | TTL токена (default: `7d`) |
 | `PORT` | нет | Порт бэкенда (default: `3001`) |
@@ -53,3 +54,9 @@
 | Dev (локально) | `backend/.env` + `frontend/.env` |
 | Prod | `/opt/maxmazunin-cabinet/.env` на сервере |
 | Docker prod | переменные из `/opt/maxmazunin-cabinet/.env` пробрасываются в контейнеры через `env_file: .env` |
+
+## ANTHROPIC_API_KEY
+
+| Переменная | Значение | Описание |
+|-----------|---------|---------|
+| `ANTHROPIC_API_KEY` | — | Ключ Anthropic Claude API. Без ключа → MockClaudeClient (советы-заглушки, без сетевых вызовов). Получить: console.anthropic.com → API Keys. |

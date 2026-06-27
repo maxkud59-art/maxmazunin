@@ -715,3 +715,37 @@ VkConversation → VkClient (1:1)
 **Cron:** followup молчунов каждые 10 мин, custom audience sync каждые 6 ч, LaL refresh в 03:00.
 
 **Хуки в BotEngine:** `message_allow` → `DIALOG_ALLOWED`, `message_new` → `FIRST_MESSAGE` (fire-and-forget).
+
+## ai-assistant
+
+**Файлы:** `backend/src/ai-assistant/`
+
+| Эндпоинт | Описание |
+|----------|---------|
+| `GET /api/ai-assistant/conversations` | Список диалогов с lifecycleStage |
+| `GET /api/ai-assistant/conversations/:id/panel` | Полная панель: сообщения, SLA, действия, заметки |
+| `PATCH /api/ai-assistant/conversations/:id/stage` | Сменить стадию жизненного цикла (только менеджер) |
+| `POST /api/ai-assistant/conversations/:id/coach` | Получить AI-советы (без автоотправки) |
+| `GET /api/ai-assistant/conversations/:id/actions` | Ожидающие AI-предложения |
+| `PATCH /api/ai-assistant/actions/:id/review` | Принять/отклонить AI-предложение (human-in-the-loop) |
+| `GET /api/ai-assistant/conversations/:id/notes` | Внутренние заметки |
+| `POST /api/ai-assistant/conversations/:id/notes` | Добавить заметку |
+| `GET /api/ai-assistant/conversations/:id/sla` | SLA-трекеры |
+
+**Переменная:** `ANTHROPIC_API_KEY` (без ключа → MockClaudeClient, детерминированные советы-заглушки).
+
+**Guardrails:**
+- AI НИКОГДА не пишет клиенту и не меняет стадию самостоятельно
+- НЕ авто-меняем стадию OPLACHENO через AI
+- Фильтрация манипулятивных формулировок в suggestions
+
+**SLA-политики** (seed: `prisma/seed-sla-policies.ts`):
+- NEW_LEAD → PRICE_SENT: 4 рабочих часа
+- PRICE_SENT → OFORMLENO: 24 ч
+- OFORMLENO → OPLACHENO: 48 ч (главный SLA)
+- IN_PRODUCTION → READY_TO_SHIP: 72 ч
+- Cron каждые 15 мин — помечает просроченные трекеры `isBreached=true`
+
+**Модели Prisma:** `LifecycleStage` (enum, поле `VkConversation.lifecycleStage`), `SlaPolicy`, `SlaTracker`, `AiAction`, `InternalNote`.
+
+**Frontend:** `components/ai-assistant/AiAssistantPanel.vue`, `components/ai-assistant/SlaBadge.vue`, страница `/assistant/ai-panel`.

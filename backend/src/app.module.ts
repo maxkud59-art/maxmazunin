@@ -22,6 +22,7 @@ import { DialogAnalysisModule } from './dialog-analysis/dialog-analysis.module';
 import { ExperimentsModule } from './experiments/experiments.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { AudienceModule } from './audience/audience.module';
+import { AiAssistantModule } from './ai-assistant/ai-assistant.module';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { AudienceModule } from './audience/audience.module';
     ExperimentsModule,
     AnalyticsModule,
     AudienceModule,
+    AiAssistantModule,
   ],
 })
 export class AppModule {}

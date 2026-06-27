@@ -36,6 +36,7 @@ const experiments = [
   { label: 'Воронка',          icon: '🔽',  soon: false, href: '/analytics/funnel' },
   { label: 'A/B тесты',        icon: '🧪',  soon: false, href: '/experiments' },
   { label: 'Аудитории',        icon: '🎯',  soon: false, href: '/audience' },
+  { label: 'AI-коуч',          icon: '🧠',  soon: false, href: '/assistant/ai-panel' },
 ];
 </script>
 

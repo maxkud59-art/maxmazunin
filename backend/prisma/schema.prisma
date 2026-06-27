@@ -331,24 +331,31 @@ enum VkDirection {
 }
 
 model VkConversation {
-  id              String    @id @default(cuid())
-  peerId          Int       @unique
-  peerType        String    @default("user")
-  clientName      String    @default("")
+  id              String          @id @default(cuid())
+  peerId          Int             @unique
+  peerType        String          @default("user")
+  clientName      String          @default("")
   clientAvatar    String?
-  lastMessageText String    @default("")
-  lastMessageAt   DateTime  @default(now())
-  unreadCount     Int       @default(0)
+  lastMessageText String          @default("")
+  lastMessageAt   DateTime        @default(now())
+  unreadCount     Int             @default(0)
   crmStatus       String?
   assignedBotId   String?
-  botPaused       Boolean   @default(false)
-  updatedAt       DateTime  @updatedAt
+  botPaused       Boolean         @default(false)
+  updatedAt       DateTime        @updatedAt
+  lifecycleStage  LifecycleStage?
+  assignedManagerId String?
 
   messages       VkMessage[]
   client         VkClient?
   dialogAnalyses DialogAnalysis[]
+  slaTrackers    SlaTracker[]
+  aiActions      AiAction[]
+  internalNotes  InternalNote[]
 
   @@index([lastMessageAt])
+  @@index([lifecycleStage])
+  @@index([assignedManagerId])
 }
 
 model VkMessage {
@@ -1100,4 +1107,96 @@ model VkSyncLog {
   @@index([ts])
   @@index([audienceId])
   @@index([status])
+}
+
+// ─── AI-ассистент: жизненный цикл сделки + SLA + AI-предложения (additive 2026-06-27) ───
+
+enum LifecycleStage {
+  NEW_LEAD
+  PRICE_SENT
+  OFORMLENO
+  IN_PRODUCTION
+  READY_TO_SHIP
+  SHIPPED
+  DELIVERED
+  OPLACHENO
+  CLOSED_LOST
+}
+
+enum AiActionType {
+  SUGGEST_REPLY
+  SUGGEST_STAGE_CHANGE
+  SUGGEST_FOLLOWUP
+  RISK_ALERT
+}
+
+enum AiActionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+// SLA-политика: сколько часов отведено на переход между стадиями.
+model SlaPolicy {
+  id              String         @id @default(cuid())
+  fromStage       LifecycleStage
+  toStage         LifecycleStage
+  businessHours   Int            @default(24)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  trackers        SlaTracker[]
+
+  @@unique([fromStage, toStage])
+}
+
+// Трекер SLA по каждому диалогу: когда открыт, когда истекает, закрыт ли.
+model SlaTracker {
+  id             String         @id @default(cuid())
+  conversationId String
+  policyId       String
+  openedAt       DateTime       @default(now())
+  deadlineAt     DateTime
+  closedAt       DateTime?
+  isBreached     Boolean        @default(false)
+
+  conversation   VkConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  policy         SlaPolicy      @relation(fields: [policyId], references: [id])
+
+  @@index([conversationId])
+  @@index([deadlineAt])
+  @@index([isBreached])
+}
+
+// Предложение AI менеджеру (human-in-the-loop). AI никогда не действует сам.
+model AiAction {
+  id             String         @id @default(cuid())
+  conversationId String
+  type           AiActionType
+  status         AiActionStatus @default(PENDING)
+  payload        Json
+  reasoning      String         @default("")
+  reviewedBy     String?
+  reviewedAt     DateTime?
+  expiresAt      DateTime?
+  createdAt      DateTime       @default(now())
+
+  conversation   VkConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, status])
+  @@index([status, createdAt])
+}
+
+// Внутренние заметки менеджера (не видны клиенту).
+model InternalNote {
+  id             String         @id @default(cuid())
+  conversationId String
+  authorId       String
+  body           String
+  createdAt      DateTime       @default(now())
+
+  conversation   VkConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
 }
