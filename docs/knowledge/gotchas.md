@@ -1,5 +1,70 @@
 # Известные проблемы и фиксы
 
+## 2026-06-23 | CRM: второй Prisma-клиент не найден после сборки (`Cannot find module`)
+
+**Симптом:** Backend запускается, CrmModule инициализируется, но сразу крашится: `Error: Cannot find module '../generated/crm-client'`.
+
+**Причина:** `nest build` кладёт JS в `dist/src/crm/prisma-crm.service.js`. Из этого пути `../generated/crm-client` резолвится как `dist/src/generated/crm-client`, которого не существует. Сам клиент был сгенерирован в `src/generated/crm-client`.
+
+**Фикс:** Генерировать клиент в `node_modules`, а не в `src/`:
+```prisma
+generator crmClient {
+  provider = "prisma-client-js"
+  output   = "../node_modules/@prisma/crm-client"
+}
+```
+Импорт в коде: `import { PrismaClient } from '@prisma/crm-client'`. Путь не зависит от структуры dist.
+
+---
+
+## 2026-06-23 | cabinet DB: `migrate deploy` падает с «relation does not exist» на чистой БД
+
+**Симптом:** На свежей локальной базе `cabinet` команда `npx prisma migrate deploy` падает с ошибкой `relation "Campaign" does not exist`.
+
+**Причина:** Миграции в `prisma/migrations/` — только incremental (добавляют колонки в уже существующие таблицы). Базовая схема применялась через `db push` на проде; здесь она не применялась.
+
+**Фикс (для локального разворачивания):**
+1. `npx prisma db push --accept-data-loss` — создаёт все таблицы из текущей схемы.
+2. `npx prisma migrate resolve --applied 20260620_add_vk_messenger`
+3. `npx prisma migrate resolve --applied 20260621_campaign_audience_archived`
+После этого `migrate status` покажет all applied.
+
+---
+
+## 2026-06-21 | VK Ads: пустой список кабинетов / «Готово: 0 снимков»
+
+**Симптом:** На странице `/vk-ads` выпадающий список кабинетов пуст, кнопка «Обновить сейчас» показывает «Готово: 0 снимков», статистика не появляется.
+
+**Причина:** Таблица `VkCabinet` пуста (синхронизация не выполнялась) или задан неправильный токен.
+
+**Два типа токенов VK — это РАЗНЫЕ системы:**
+
+| Токен | Переменная | Где получить | Права |
+|-------|-----------|-------------|-------|
+| Рекламный (VK Ads) | `VK_ADS_TOKEN` | ads.vk.com → Настройки → API | `ads` |
+| Сообщества (мессенджер) | `VK_GROUP_TOKEN` | vk.com → Управление сообществом → API | `messages` |
+
+Токен сообщества (`VK_GROUP_TOKEN`) **не работает** для рекламной статистики и наоборот.
+
+**Фикс:**
+1. Получить токен на [ads.vk.com](https://ads.vk.com) → Настройки → Доступ по API → Создать токен (галка **«Рекламные кампании»**).
+2. Добавить в `.env` на сервере: `VK_ADS_TOKEN=<токен>`.
+3. Перезапустить: `pm2 restart cabinet-backend`.
+4. На странице `/vk-ads` нажать **«🔑 Проверить токен»** — должно показать "действителен, доступно аккаунтов: N".
+5. Нажать **«⟳ Синхр. кабинеты»** (кнопка видна только для ADMIN) — система загрузит аккаунты из VK API.
+6. Нажать **«↻ Обновить сейчас»** — начнётся сбор статистики.
+
+**Что изменено в коде (2026-06-21):**
+- Введена переменная `VK_ADS_TOKEN` (fallback на `VK_ACCESS_TOKEN` для обратной совместимости).
+- `VkAdsClientService.listAccounts()` — загружает аккаунты из VK API.
+- `VkAdsService.syncAccounts()` — upsert аккаунтов в `VkCabinet` по `externalAccountId`.
+- `POST /api/vk-ads/sync-accounts` (ADMIN) — endpoint синхронизации.
+- `getStatistics()` теперь принимает `accountId` и передаёт в API-запросы.
+- `checkTokenHealth()` использует `listAccounts()` — 0 аккаунтов → предупреждение о правах.
+- Frontend: баннер «Кабинеты не найдены» + кнопка «Синхр. кабинеты» (ADMIN).
+
+---
+
 ## 2026-06-21 | Мессенджер: сообщения не уходят — VK_GROUP_TOKEN пустой
 
 **Симптом:** Из мессенджера (/assistant/messenger) нажать «Отправить» — сообщение не уходит. В логах PM2 нет явных ошибок VK. `VK_TOKEN_LEN=0`.
@@ -262,3 +327,30 @@ pm2 show enhance-service   # max memory restart: 629145600
 **Диагностика:** Сообщение «Ошибка запуска генерации» — это именно fallback (`e?.data?.message ?? 'Ошибка...'`), то есть `e.data.message` undefined → не HTTP-ошибка с JSON-телом, а локальный JS TypeError.
 
 **Фикс:** В `[id].vue` строки 340, 357, 380 — заменить `api.` → `apiCalls.`.
+
+## 2026-06-27 | CRM: краш backend при отсутствии CRM_DATABASE_URL на сервере
+
+**Симптом:** `cabinet-backend` статус `errored`, в логах: `PrismaClientConstructorValidationError: Invalid value undefined for datasource "db"`. Backend не стартует, health check 502.
+
+**Причина:** `PrismaCrmService extends PrismaClient` вызывает `super({ datasources: { db: { url: undefined } } })` — Prisma бросает исключение в конструкторе когда `CRM_DATABASE_URL` не задан в `.env`.
+
+**Фикс:** `PrismaCrmService` использует `process.env.DATABASE_URL` как fallback в конструкторе. Добавлен флаг `configured: boolean`. `$connect`/`$disconnect` вызываются только при `configured=true`. `CrmService` методы возвращают пустые результаты когда `!configured`.
+
+**Правило:** Любой модуль с опциональной внешней зависимостью (вторая БД, внешний API) должен проверять наличие env-переменной и деградировать gracefully, а не падать при старте.
+
+## 2026-06-27 | Frontend: @apply в scoped-стилях не работает в Tailwind 4
+
+**Симптом:** `npm run build` на сервере падает с `Cannot apply unknown utility class 'border-gray-300'. Are you using CSS modules or similar and missing @reference?`
+
+**Причина:** В Tailwind 4 `@apply` в `<style scoped>` (Vue SFC) работает в контексте CSS-модулей, где Tailwind-классы по умолчанию недоступны.
+
+**Фикс:** Добавить `@reference "tailwindcss";` первой строкой в каждом `<style scoped>` блоке, который использует `@apply`.
+
+```vue
+<style scoped>
+@reference "tailwindcss";
+.btn-primary { @apply bg-indigo-600 text-white ...; }
+</style>
+```
+
+**Файлы:** `pages/audience.vue`, `pages/experiments/index.vue`, `pages/experiments/[id].vue`, `pages/analytics/funnel.vue`.
