@@ -121,6 +121,7 @@ export class FinanceService implements OnModuleInit {
         openingBalance: dto.openingBalance ?? 0,
         currentBalance: dto.openingBalance ?? 0,
         order: dto.order ?? 0,
+        bankAccountNumber: dto.bankAccountNumber ?? null,
       },
     });
   }
@@ -613,18 +614,26 @@ export class FinanceService implements OnModuleInit {
 
   async importFromBank(from: string, to: string) {
     if (!this.bank.configured) {
-      throw new BadRequestException('BANK_API_TOKEN не задан в .env');
+      throw new BadRequestException('TBANK_TOKEN не задан в .env');
     }
     const txs = await this.bank.fetchTransactions(new Date(from), new Date(to));
+
+    // Кэш счетов: сначала ищем по bankAccountNumber, иначе берём первый BANK-счёт
+    const allAccounts = await this.prisma.finAccount.findMany({ where: { archived: false } });
+    const accountByNumber = new Map(allAccounts.filter(a => a.bankAccountNumber).map(a => [a.bankAccountNumber!, a]));
+    const fallbackAccount = allAccounts.find(a => a.type === 'BANK') ?? allAccounts[0];
+
     let created = 0;
+    let skipped = 0;
     for (const tx of txs) {
       const existing = await this.prisma.finOperation.findUnique({
         where: { source_externalId: { source: 'BANK_IMPORT', externalId: tx.externalId } },
       });
-      if (existing) continue;
-      // Find account by externalId or use first
-      const account = await this.prisma.finAccount.findFirst({ where: { archived: false } });
+      if (existing) { skipped++; continue; }
+
+      const account = accountByNumber.get(tx.accountExternalId) ?? fallbackAccount;
       if (!account) continue;
+
       await this.prisma.finOperation.create({
         data: {
           date: tx.date,
@@ -641,10 +650,14 @@ export class FinanceService implements OnModuleInit {
       created++;
     }
     if (created > 0) {
-      const accounts = await this.prisma.finAccount.findMany({ where: { archived: false } });
-      for (const a of accounts) await this.recalcAccountBalance(a.id);
+      for (const a of allAccounts) await this.recalcAccountBalance(a.id);
     }
-    return { imported: created, total: txs.length };
+    return { imported: created, skipped, total: txs.length };
+  }
+
+  async getBankAccounts() {
+    if (!this.bank.configured) throw new BadRequestException('TBANK_TOKEN не задан в .env');
+    return this.bank.getBankAccounts();
   }
 
   async importFromCdek(from: string, to: string) {

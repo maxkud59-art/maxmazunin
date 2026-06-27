@@ -19,6 +19,7 @@ export class CreateAccountDto {
   @ApiPropertyOptional({ enum: FinAccountType }) @IsOptional() @IsEnum(FinAccountType) type?: FinAccountType;
   @ApiPropertyOptional() @IsOptional() @IsInt() @Type(() => Number) openingBalance?: number;
   @ApiPropertyOptional() @IsOptional() @IsInt() @Type(() => Number) order?: number;
+  @ApiPropertyOptional() @IsOptional() @IsString() bankAccountNumber?: string;
 }
 
 export class UpdateAccountDto {
@@ -27,6 +28,7 @@ export class UpdateAccountDto {
   @ApiPropertyOptional() @IsOptional() @IsInt() @Type(() => Number) openingBalance?: number;
   @ApiPropertyOptional() @IsOptional() @IsInt() @Type(() => Number) order?: number;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() archived?: boolean;
+  @ApiPropertyOptional() @IsOptional() @IsString() bankAccountNumber?: string;
 }
 
 // ─── Category DTOs ────────────────────────────────────────────────────────────

@@ -720,16 +720,17 @@ enum AccrualType {
 }
 
 model FinAccount {
-  id             String         @id @default(cuid())
-  name           String
-  type           FinAccountType @default(BANK)
-  openingBalance Int            @default(0)
-  currentBalance Int            @default(0)
-  currency       String         @default("RUB")
-  archived       Boolean        @default(false)
-  order          Int            @default(0)
-  createdAt      DateTime       @default(now())
-  operations     FinOperation[]
+  id                String         @id @default(cuid())
+  name              String
+  type              FinAccountType @default(BANK)
+  openingBalance    Int            @default(0)
+  currentBalance    Int            @default(0)
+  currency          String         @default("RUB")
+  archived          Boolean        @default(false)
+  order             Int            @default(0)
+  bankAccountNumber String?        // T-Bank account number for auto-import matching
+  createdAt         DateTime       @default(now())
+  operations        FinOperation[]
 
   @@index([archived, order])
 }

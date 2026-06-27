@@ -104,9 +104,16 @@ export class FinanceController {
   @ApiOperation({ summary: 'Отчёт ПНЛ (по начислению)' })
   getPnl(@Query() q: ReportQueryDto) { return this.svc.getPnlReport(q); }
 
+  // ─── Bank ──────────────────────────────────────────────────────────────────
+  @Get('bank/accounts')
+  @ApiOperation({ summary: 'Список счетов T-Bank' })
+  getBankAccounts() {
+    return this.svc.getBankAccounts();
+  }
+
   // ─── Import ────────────────────────────────────────────────────────────────
   @Post('import/bank')
-  @ApiOperation({ summary: 'Импорт из банка' })
+  @ApiOperation({ summary: 'Импорт из T-Bank (выписка за период)' })
   importBank(@Body() body: { from: string; to: string }) {
     return this.svc.importFromBank(body.from, body.to);
   }
