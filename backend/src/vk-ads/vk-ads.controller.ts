@@ -50,6 +50,15 @@ export class VkAdsController {
     return this.vkAdsService.getHourProfile(cabinetId, from, to);
   }
 
+  @Post('sync-accounts')
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: '[ADMIN] Синхронизировать список аккаунтов из VK API в VkCabinet' })
+  @ApiResponse({ status: 200, schema: { properties: { synced: { type: 'number' }, cabinets: { type: 'array' } } } })
+  syncAccounts(): Promise<{ synced: number; cabinets: VkCabinetDto[] }> {
+    return this.vkAdsService.syncAccounts();
+  }
+
   @Post('poll')
   @UseGuards(RolesGuard)
   @Roles(Role.ADMIN)

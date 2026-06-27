@@ -32,6 +32,7 @@ const TABS = [
   { path: '/finance/orders', label: 'Заказы → ПНЛ', icon: '📦' },
   { path: '/finance/accounts', label: 'Счета', icon: '🏦' },
   { path: '/finance/categories', label: 'Статьи', icon: '📋' },
+  { path: '/finance/ai-finance', label: 'AI-финансист', icon: '🧠' },
 ];
 </script>
 

@@ -416,6 +416,18 @@ CSS в ячейке: `object-fit: cover; object-position: {panX}% {panY}%; trans
 - `/finance/orders` — управление заказами (PREPAY→SHIPPED признаёт выручку)
 - `/finance/accounts` — CRUD счетов
 - `/finance/categories` — CRUD статей и подстатей
+- `/finance/ai-finance` — AI-финансист (очередь, аналитика, прогноз, аномалии, правила)
+
+### AI-финансист (`finance/ai-finance`) [добавлен 2026-06-27]
+
+Полная документация: [docs/knowledge/ai-finance.md](ai-finance.md)
+
+Краткая схема:
+1. Незакатегоризированные операции → правило или Claude → PROPOSED
+2. Менеджер подтверждает → CONFIRMED + upsert CategorizationRule
+3. Аналитика: ДДС + ПНЛ за период с AI-комментарием
+4. Прогноз: cashflow (90д история → недели) + PNL (пайплайн заказов), `estimate:true`
+5. Аномалии: дубли, 3σ-выбросы, бэклог
 
 ### Проекты
 

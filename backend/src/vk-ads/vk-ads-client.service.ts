@@ -2,18 +2,23 @@
  * Адаптер к VK Ads API. Вся специфика VK — только здесь.
  *
  * Новый кабинет (ads.vk.com/api/v2):
- *   - Auth: Authorization: Bearer {token}, account_id в запросах НЕ нужен
+ *   - Auth: Authorization: Bearer {token}, нужен токен с правом ads (VK_ADS_TOKEN)
  *   - Поле показов: base.shows (не impressions!)
  *   - Расход: base.spent — строка, нужен parseFloat
  *   - Сообщения: base.vk.result (VK-native цель — диалоги/сообщения)
  *   - Трюк с датой: date_from=вчера, date_to=сегодня (иначе WRONG_DATE)
+ *
+ * ВАЖНО: для VK Ads нужен ОТДЕЛЬНЫЙ токен с правом ads.
+ * VK_ADS_TOKEN — токен рекламного кабинета (ads.vk.com).
+ * VK_GROUP_TOKEN — токен сообщества с правом messages (для мессенджера/рассылок).
+ * Это разные токены, нельзя их перепутать!
  *
  * Кеш кампаний: список кампаний запрашивается раз в 6 часов, не каждый poll.
  * Это критично — при 7000+ кампаний список занимает ~30 запросов к API.
  *
  * Старый кабинет (vk.com):
  *   - ads.getStatistics, поле message_sends / message_enters
- *   - Требует VK_ACCOUNT_ID
+ *   - Требует VK_ACCOUNT_ID или cabinet.externalAccountId
  */
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -41,6 +46,12 @@ export interface StatRecord {
   leads: number;
 }
 
+export interface VkAdAccount {
+  id: string;
+  name: string;
+  type?: string; // 'agency' | 'advertiser' etc
+}
+
 const CHUNK_SIZE = 100;
 const PAGE_SIZE = 250;
 const MSK_OFFSET_MS = 3 * 60 * 60 * 1000;
@@ -51,15 +62,16 @@ export class VkAdsClientService {
   private readonly logger = new Logger(VkAdsClientService.name);
   private readonly http: AxiosInstance;
   private readonly platform: string;
-  private readonly token: string;
+  readonly token: string;
   private readonly accountId: string;
 
-  // Кеш кампаний: {id → name}, обновляется раз в 6 ч
-  private campaignCache: Record<string, string> = {};
-  private campaignCacheUpdatedAt = 0;
+  // Кеш кампаний per account: {accountId → {campaignId → name}}, обновляется раз в 6 ч
+  private campaignCacheByAccount: Map<string, { data: Record<string, string>; updatedAt: number }> = new Map();
 
   constructor(private readonly config: ConfigService) {
-    this.token = config.get<string>('VK_ACCESS_TOKEN', '');
+    // VK_ADS_TOKEN — новая переменная для токена рекламного кабинета.
+    // Для обратной совместимости читаем VK_ACCESS_TOKEN если VK_ADS_TOKEN не задан.
+    this.token = config.get<string>('VK_ADS_TOKEN', '') || config.get<string>('VK_ACCESS_TOKEN', '');
     this.platform = config.get<string>('VK_API_PLATFORM', 'new');
     this.accountId = config.get<string>('VK_ACCOUNT_ID', '');
 
@@ -74,31 +86,88 @@ export class VkAdsClientService {
     }
   }
 
-  async getStatistics(forDate: Date): Promise<StatRecord[]> {
+  /** Загружает список доступных рекламных аккаунтов для текущего токена. */
+  async listAccounts(): Promise<VkAdAccount[]> {
+    if (!this.token) return [];
+    try {
+      if (this.platform === 'old') {
+        return await this.listAccountsOld();
+      } else {
+        return await this.listAccountsNew();
+      }
+    } catch (err: any) {
+      if (err instanceof VkAuthError) throw err;
+      this.logger.error('listAccounts failed: %s', err.message);
+      throw err;
+    }
+  }
+
+  private async listAccountsNew(): Promise<VkAdAccount[]> {
+    const data = await this.retry(() =>
+      this.http.get('/accounts.json').then((r) => r.data),
+    );
+
+    const errors: any[] = data?.errors ?? (data?.error ? [data.error] : []);
+    if (errors.length) {
+      const authErr = errors.find((e: any) => VK_AUTH_CODES.has(String(e.code ?? '').toUpperCase()));
+      if (authErr) throw new VkAuthError(`VK-токен недействителен или не имеет права ads (${authErr.code}): ${authErr.title ?? ''}`);
+      throw new Error(`VK API ошибка: ${JSON.stringify(errors[0])}`);
+    }
+
+    const items: any[] = data?.items ?? [];
+    return items.map((a: any) => ({
+      id: String(a.id),
+      name: a.name ?? String(a.id),
+      type: a.type,
+    }));
+  }
+
+  private async listAccountsOld(): Promise<VkAdAccount[]> {
+    const data = await this.retry(() =>
+      this.http.get('/ads.getAccounts', {
+        params: { access_token: this.token, v: '5.131' },
+      }).then((r) => r.data),
+    );
+
+    if (data?.error) {
+      const code = Number(data.error.error_code);
+      if (VK_OLD_AUTH_CODES.has(code)) throw new VkAuthError(`VK-токен недействителен (код ${code}): ${data.error.error_msg ?? ''}`);
+      throw new Error(`VK API ошибка: ${data.error.error_msg ?? JSON.stringify(data.error)}`);
+    }
+
+    const accounts: any[] = data?.response ?? [];
+    return accounts.map((a: any) => ({
+      id: String(a.account_id),
+      name: a.account_name ?? String(a.account_id),
+      type: a.account_type,
+    }));
+  }
+
+  async getStatistics(forDate: Date, accountId?: string): Promise<StatRecord[]> {
     if (!this.token) {
-      this.logger.warn('VK_ACCESS_TOKEN not set — skipping poll');
+      this.logger.warn('VK_ADS_TOKEN not set — skipping poll');
       return [];
     }
     return this.platform === 'old'
-      ? this.getStatisticsOld(forDate)
-      : this.getStatisticsNew(forDate);
+      ? this.getStatisticsOld(forDate, accountId)
+      : this.getStatisticsNew(forDate, accountId);
   }
 
   // ─── Новый кабинет (ads.vk.com) ──────────────────────────────────────────
 
-  private async getStatisticsNew(forDate: Date): Promise<StatRecord[]> {
+  private async getStatisticsNew(forDate: Date, accountId?: string): Promise<StatRecord[]> {
     const mskDate = new Date(forDate.getTime() + MSK_OFFSET_MS);
     const dateStr = mskDate.toISOString().slice(0, 10);
     const prevDate = new Date(mskDate.getTime() - 86_400_000).toISOString().slice(0, 10);
 
-    const names = await this.getCampaignsCached();
+    const names = await this.getCampaignsCached(accountId);
     const ids = Object.keys(names);
     if (ids.length === 0) {
-      this.logger.warn('No campaigns in cache');
+      this.logger.warn('No campaigns in cache (accountId=%s)', accountId ?? 'all');
       return [];
     }
 
-    this.logger.log('Fetching stats for %d campaigns (%d chunks)', ids.length, Math.ceil(ids.length / CHUNK_SIZE));
+    this.logger.log('Fetching stats for %d campaigns (%d chunks, account=%s)', ids.length, Math.ceil(ids.length / CHUNK_SIZE), accountId ?? 'all');
     const records: StatRecord[] = [];
 
     for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
@@ -109,13 +178,13 @@ export class VkAdsClientService {
           date_to: dateStr,
           'id[]': chunk,
         };
+        if (accountId) params.account_id = accountId;
 
         const data = await this.retry(() =>
           this.http.get('/statistics/campaigns/day.json', { params }).then((r) => r.data),
         );
 
         if (data.error) {
-          // Check if it's an auth error (new platform uses errors array or error object)
           const errCode = String(data.error?.code ?? '').toUpperCase();
           if (VK_AUTH_CODES.has(errCode)) {
             throw new VkAuthError(`Токен VK недействителен или истёк (${data.error.code})`);
@@ -140,7 +209,7 @@ export class VkAdsClientService {
             if (row.date !== dateStr) continue;
             const base = row.base ?? {};
             const spend = parseFloat(String(base.spent ?? '0')) || 0;
-            if (spend === 0 && !base.shows) continue; // пропускаем нулевые записи
+            if (spend === 0 && !base.shows) continue;
             records.push({
               campaignId: oid,
               campaignName: names[oid] ?? oid,
@@ -154,7 +223,7 @@ export class VkAdsClientService {
 
         if (i + CHUNK_SIZE < ids.length) await this.sleep(1000);
       } catch (err: any) {
-        if (err instanceof VkAuthError) throw err; // propagate auth errors
+        if (err instanceof VkAuthError) throw err;
         this.logger.error('Stats fetch failed for chunk %d: %s', i / CHUNK_SIZE + 1, err.message);
       }
     }
@@ -163,25 +232,31 @@ export class VkAdsClientService {
     return records;
   }
 
-  // Кешированный список кампаний: обновляется раз в 6 часов
-  private async getCampaignsCached(): Promise<Record<string, string>> {
-    const age = Date.now() - this.campaignCacheUpdatedAt;
-    if (age < CAMPAIGN_CACHE_TTL_MS && Object.keys(this.campaignCache).length > 0) {
-      this.logger.debug('Using campaign cache (%d campaigns, age %dm)', Object.keys(this.campaignCache).length, Math.round(age / 60_000));
-      return this.campaignCache;
+  private async getCampaignsCached(accountId?: string): Promise<Record<string, string>> {
+    const key = accountId ?? '__all__';
+    const entry = this.campaignCacheByAccount.get(key);
+    const age = entry ? Date.now() - entry.updatedAt : Infinity;
+
+    if (age < CAMPAIGN_CACHE_TTL_MS && entry && Object.keys(entry.data).length > 0) {
+      this.logger.debug('Using campaign cache for account=%s (%d campaigns, age %dm)', key, Object.keys(entry.data).length, Math.round(age / 60_000));
+      return entry.data;
     }
-    this.campaignCache = await this.listCampaignsNew();
-    this.campaignCacheUpdatedAt = Date.now();
-    return this.campaignCache;
+
+    const data = await this.listCampaignsNew(accountId);
+    this.campaignCacheByAccount.set(key, { data, updatedAt: Date.now() });
+    return data;
   }
 
-  private async listCampaignsNew(): Promise<Record<string, string>> {
+  private async listCampaignsNew(accountId?: string): Promise<Record<string, string>> {
     const result: Record<string, string> = {};
     let offset = 0;
 
     while (true) {
+      const params: Record<string, any> = { limit: PAGE_SIZE, offset };
+      if (accountId) params.account_id = accountId;
+
       const data = await this.retry(() =>
-        this.http.get('/campaigns.json', { params: { limit: PAGE_SIZE, offset } }).then((r) => r.data),
+        this.http.get('/campaigns.json', { params }).then((r) => r.data),
       );
 
       for (const item of data.items ?? []) {
@@ -194,13 +269,19 @@ export class VkAdsClientService {
       await this.sleep(300);
     }
 
-    this.logger.log('Campaigns listed: %d total', Object.keys(result).length);
+    this.logger.log('Campaigns listed: %d total (account=%s)', Object.keys(result).length, accountId ?? 'all');
     return result;
   }
 
   // ─── Старый кабинет (vk.com) ─────────────────────────────────────────────
 
-  private async getStatisticsOld(forDate: Date): Promise<StatRecord[]> {
+  private async getStatisticsOld(forDate: Date, accountId?: string): Promise<StatRecord[]> {
+    const effectiveAccountId = accountId ?? this.accountId;
+    if (!effectiveAccountId) {
+      this.logger.warn('No account_id for old platform — skipping poll');
+      return [];
+    }
+
     const mskDate = new Date(forDate.getTime() + MSK_OFFSET_MS);
     const d = mskDate.toISOString().slice(0, 10);
     const dateStr = d.split('-').reverse().join('.'); // DD.MM.YYYY
@@ -208,7 +289,7 @@ export class VkAdsClientService {
     const campaigns = await this.retry(() =>
       this.http
         .get('/ads.getCampaigns', {
-          params: { access_token: this.token, v: '5.131', account_id: this.accountId },
+          params: { access_token: this.token, v: '5.131', account_id: effectiveAccountId },
         })
         .then((r) => r.data.response ?? []),
     );
@@ -231,7 +312,7 @@ export class VkAdsClientService {
             params: {
               access_token: this.token,
               v: '5.131',
-              account_id: this.accountId,
+              account_id: effectiveAccountId,
               ids_type: 'campaign',
               ids: chunk.join(','),
               period: 'day',
@@ -268,13 +349,11 @@ export class VkAdsClientService {
       try {
         return await fn();
       } catch (err: any) {
-        // Auth errors — never retry, surface immediately
         if (err instanceof VkAuthError) throw err;
         if (err?.response?.status === 401 || err?.response?.status === 403) {
           throw new VkAuthError(`VK вернул HTTP ${err.response.status} — токен недействителен или истёк`);
         }
         if (attempt === retries) throw err;
-        // 429 — VK rate limit: ждём дольше чем обычно
         const is429 = err?.response?.status === 429;
         const waitMs = is429 ? 15_000 : delay;
         this.logger.warn('Retry %d/%d after %dms: %s', attempt + 1, retries, waitMs, err.message);
@@ -285,40 +364,24 @@ export class VkAdsClientService {
     throw new Error('retry exhausted');
   }
 
-  /** Minimal test call to check if the current token is valid. */
+  /** Проверить токен: вызывает listAccounts() и анализирует ответ. */
   async checkTokenHealth(): Promise<{ ok: boolean; message: string }> {
     if (!this.token) {
-      return { ok: false, message: 'VK_ACCESS_TOKEN не задан в .env' };
+      return { ok: false, message: 'VK_ADS_TOKEN не задан в .env — рекламная статистика недоступна' };
     }
     try {
-      if (this.platform === 'old') {
-        const data = await this.http
-          .get('/ads.getCampaigns', {
-            params: { access_token: this.token, v: '5.131', account_id: this.accountId, limit: 1 },
-          })
-          .then((r) => r.data);
-        const errCode = data?.error?.error_code;
-        if (errCode && VK_OLD_AUTH_CODES.has(Number(errCode))) {
-          return { ok: false, message: `Токен VK недействителен (код ${errCode}): ${data.error.error_msg ?? ''}` };
-        }
-        if (data?.error) {
-          return { ok: false, message: `VK API ошибка: ${data.error.error_msg ?? JSON.stringify(data.error)}` };
-        }
-      } else {
-        const data = await this.http.get('/campaigns.json', { params: { limit: 1 } }).then((r) => r.data);
-        const firstErr = (data?.errors ?? [])[0];
-        if (firstErr && VK_AUTH_CODES.has(String(firstErr.code ?? '').toUpperCase())) {
-          return { ok: false, message: `Токен VK истёк или недействителен (${firstErr.code}): ${firstErr.title ?? ''}` };
-        }
-        if (firstErr) {
-          return { ok: false, message: `VK API ошибка (${firstErr.code}): ${firstErr.title ?? ''}` };
-        }
+      const accounts = await this.listAccounts();
+      if (accounts.length === 0) {
+        return {
+          ok: false,
+          message: 'Токен действителен, но доступных рекламных аккаунтов не найдено. Убедитесь, что токен имеет право ads и аккаунт активен.',
+        };
       }
-      return { ok: true, message: 'Токен действителен' };
+      return { ok: true, message: `Токен действителен. Доступно аккаунтов: ${accounts.length}` };
     } catch (err: any) {
       if (err instanceof VkAuthError) return { ok: false, message: err.message };
       if (err?.response?.status === 401 || err?.response?.status === 403) {
-        return { ok: false, message: `Токен VK недействителен или истёк (HTTP ${err.response.status})` };
+        return { ok: false, message: `Токен VK недействителен или истёк (HTTP ${err.response.status}). Для VK Ads нужен токен с правом ads.` };
       }
       return { ok: false, message: `Ошибка подключения к VK: ${err.message}` };
     }

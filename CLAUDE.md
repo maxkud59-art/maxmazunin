@@ -40,3 +40,4 @@
 - [env.md](docs/knowledge/env.md) — переменные окружения и их назначение
 - [glossary.md](docs/knowledge/glossary.md) — доменные термины
 - [ai-assistant.md](docs/knowledge/ai-assistant.md) — AI-ассистент: guardrails, SLA, LifecycleStage, стадии сделки
+- [ai-finance.md](docs/knowledge/ai-finance.md) — AI-финансист: классификация операций, human-in-the-loop, прогноз, аномалии

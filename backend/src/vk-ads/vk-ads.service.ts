@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { VkAdsClientService, VkAuthError } from './vk-ads-client.service';
+import { VkAdsClientService, VkAuthError, VkAdAccount } from './vk-ads-client.service';
 import { VkCabinetDto } from './dto/cabinet.dto';
 import { HourlyStatDto } from './dto/hourly.dto';
 import { HourProfileItemDto } from './dto/hour-profile.dto';
@@ -24,6 +24,41 @@ export class VkAdsService {
     return rows.map((c) => ({ id: c.id, title: c.title, externalAccountId: c.externalAccountId, isActive: c.isActive }));
   }
 
+  /**
+   * Загрузить список аккаунтов из VK API и синхронизировать с таблицей VkCabinet.
+   * Создаёт записи для новых аккаунтов, не затрагивает существующие.
+   * Если ни один кабинет не был активен — активирует первый найденный.
+   */
+  async syncAccounts(): Promise<{ synced: number; cabinets: VkCabinetDto[] }> {
+    const accounts: VkAdAccount[] = await this.vkClient.listAccounts();
+
+    if (accounts.length === 0) {
+      this.logger.warn('syncAccounts: VK API returned 0 accounts — check token scope');
+    }
+
+    const hasActive = await this.prisma.vkCabinet.count({ where: { isActive: true } });
+    let synced = 0;
+
+    for (let i = 0; i < accounts.length; i++) {
+      const acc = accounts[i];
+      await this.prisma.vkCabinet.upsert({
+        where: { externalAccountId: acc.id },
+        create: {
+          title: acc.name,
+          externalAccountId: acc.id,
+          isActive: hasActive === 0 && i === 0, // Активируем первый если ни один не активен
+        },
+        update: {
+          title: acc.name,
+        },
+      });
+      synced++;
+    }
+
+    this.logger.log('syncAccounts: synced %d accounts from VK API', synced);
+    return { synced, cabinets: await this.getCabinets() };
+  }
+
   // ─── Поллинг ──────────────────────────────────────────────────────────────
 
   async pollSnapshots(cabinetId?: string): Promise<PollResultDto[]> {
@@ -35,7 +70,8 @@ export class VkAdsService {
     for (const cabinet of cabinets) {
       const capturedAt = new Date();
       try {
-        const records = await this.vkClient.getStatistics(capturedAt);
+        // Pass cabinet's VK account ID so stats are scoped to the correct account
+        const records = await this.vkClient.getStatistics(capturedAt, cabinet.externalAccountId);
 
         // Batch insert
         await this.prisma.adSnapshot.createMany({

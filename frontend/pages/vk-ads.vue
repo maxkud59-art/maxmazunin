@@ -2,10 +2,13 @@
 import { Bar } from 'vue-chartjs';
 import { getVkAds } from '~/app/api/generated/vk-ads/vk-ads';
 import type { HourlyStatDto, HourProfileItemDto, VkCabinetDto } from '~/app/api/generated/maxmazuninRuPersonalCabinetAPI.schemas';
+import { useAuthStore } from '~/stores/auth';
 
 definePageMeta({ middleware: ['auth'] });
 
 // ─── Утилиты ──────────────────────────────────────────────────────────────────
+
+const auth = useAuthStore();
 
 function todayMsk(): string {
   return new Date(Date.now() + 3 * 3_600_000).toISOString().slice(0, 10);
@@ -44,9 +47,15 @@ const pollMsg = ref('');
 
 // ─── VK Token health ──────────────────────────────────────────────────────────
 
-const tokenError = ref('');   // non-empty = show error banner
+const tokenError = ref('');
 const tokenChecking = ref(false);
-const tokenOk = ref<boolean | null>(null);  // null = not checked yet
+const tokenOk = ref<boolean | null>(null);
+
+function apiHeaders(): Record<string, string> {
+  const jwt = process.client ? (localStorage.getItem('auth_token') ?? '') : '';
+  if (!jwt) return {};
+  return { Authorization: `Bearer ${jwt}` };
+}
 
 async function checkTokenHealth() {
   tokenChecking.value = true;
@@ -54,9 +63,8 @@ async function checkTokenHealth() {
   tokenOk.value = null;
   try {
     const apiBase = useRuntimeConfig().public.apiBase as string ?? '';
-    const token = process.client ? (localStorage.getItem('auth_token') ?? '') : '';
     const res = await $fetch<{ ok: boolean; message: string }>(`${apiBase}/api/vk-ads/token-health`, {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: apiHeaders(),
     });
     tokenOk.value = res.ok;
     if (!res.ok) tokenError.value = res.message;
@@ -68,10 +76,40 @@ async function checkTokenHealth() {
   }
 }
 
+// ─── Синхронизация аккаунтов ──────────────────────────────────────────────────
+
+const syncing = ref(false);
+const syncMsg = ref('');
+
+async function syncAccounts() {
+  syncing.value = true;
+  syncMsg.value = '';
+  try {
+    const apiBase = useRuntimeConfig().public.apiBase as string ?? '';
+    const res = await $fetch<{ synced: number; cabinets: VkCabinetDto[] }>(`${apiBase}/api/vk-ads/sync-accounts`, {
+      method: 'POST',
+      headers: apiHeaders(),
+    });
+    cabinets.value = res.cabinets;
+    const active = cabinets.value.find((c) => c.isActive) ?? cabinets.value[0];
+    if (active) selectedCabinetId.value = active.id ?? '';
+    syncMsg.value = res.synced > 0
+      ? `Синхронизировано аккаунтов: ${res.synced}`
+      : 'Аккаунты не найдены — проверьте токен и его права (нужен ads scope)';
+    if (res.synced > 0) {
+      await loadHourly();
+      await loadProfile();
+    }
+  } catch (e: any) {
+    syncMsg.value = `Ошибка: ${e?.data?.message ?? e?.message ?? 'неизвестная ошибка'}`;
+  } finally {
+    syncing.value = false;
+  }
+}
+
 // ─── Загрузка данных ──────────────────────────────────────────────────────────
 
 onMounted(async () => {
-  // Check token health first — gives immediate feedback if expired
   await checkTokenHealth();
   try {
     cabinets.value = await vkAdsControllerGetCabinets();
@@ -197,12 +235,13 @@ const chartOptions = {
       >
         <span class="text-lg leading-none mt-0.5">⚠️</span>
         <div class="flex-1 min-w-0">
-          <p class="font-semibold text-sm">VK-токен недействителен или истёк</p>
-          <p class="text-xs mt-0.5 opacity-80">{{ tokenError || 'Токен VK недействителен или истёк' }}</p>
+          <p class="font-semibold text-sm">Ошибка токена VK Ads</p>
+          <p class="text-xs mt-0.5 opacity-80">{{ tokenError || 'VK-токен недействителен или истёк' }}</p>
           <p class="text-xs mt-1 opacity-70">
-            Впишите новое значение <code class="font-mono bg-destructive/10 px-1 rounded">VK_ACCESS_TOKEN</code>
+            Задайте <code class="font-mono bg-destructive/10 px-1 rounded">VK_ADS_TOKEN</code>
             в <code class="font-mono bg-destructive/10 px-1 rounded">.env</code> на сервере
-            и перезапустите backend: <code class="font-mono bg-destructive/10 px-1 rounded">pm2 restart cabinet-backend</code>
+            (токен рекламного кабинета с правом <strong>ads</strong>, не токен группы) и перезапустите backend:
+            <code class="font-mono bg-destructive/10 px-1 rounded">pm2 restart cabinet-backend</code>
           </p>
         </div>
         <button
@@ -220,8 +259,31 @@ const chartOptions = {
         class="flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 rounded-xl px-4 py-2 text-sm"
       >
         <span>✓</span>
-        <span>VK-токен действителен</span>
+        <span>{{ tokenError ? tokenError : 'VK-токен действителен' }}</span>
         <button class="ml-auto text-xs opacity-60 hover:opacity-100 underline" @click="tokenOk = null">✕</button>
+      </div>
+
+      <!-- No cabinets banner -->
+      <div
+        v-if="tokenOk !== false && cabinets.length === 0"
+        class="flex items-start gap-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-4 py-3"
+      >
+        <span class="text-lg leading-none mt-0.5">📋</span>
+        <div class="flex-1 min-w-0">
+          <p class="font-semibold text-sm">Рекламные кабинеты не найдены</p>
+          <p class="text-xs mt-0.5 opacity-80">
+            Нажмите «Синхронизировать кабинеты» — система загрузит список аккаунтов из VK API автоматически.
+            Требуется токен с правом <strong>ads</strong> (VK_ADS_TOKEN).
+          </p>
+        </div>
+        <button
+          v-if="auth.isAdmin"
+          class="shrink-0 px-3 py-1 rounded bg-amber-600 text-white text-xs disabled:opacity-50"
+          :disabled="syncing"
+          @click="syncAccounts"
+        >
+          {{ syncing ? 'Загрузка…' : 'Синхронизировать' }}
+        </button>
       </div>
 
       <!-- Фильтры -->
@@ -247,15 +309,28 @@ const chartOptions = {
         >
           {{ polling ? 'Сбор данных…' : '↻ Обновить сейчас' }}
         </button>
+
+        <!-- Sync cabinets button (ADMIN only) -->
+        <button
+          v-if="auth.isAdmin"
+          class="px-3 py-1.5 rounded border text-sm disabled:opacity-50 text-muted-foreground hover:text-foreground transition-colors"
+          :disabled="syncing"
+          title="Загрузить список аккаунтов из VK API"
+          @click="syncAccounts"
+        >
+          {{ syncing ? '⟳ Загрузка…' : '⟳ Синхр. кабинеты' }}
+        </button>
+
         <button
           class="px-3 py-1.5 rounded border text-sm disabled:opacity-50 text-muted-foreground hover:text-foreground transition-colors"
           :disabled="tokenChecking"
-          :title="tokenOk === true ? 'Токен действителен' : 'Проверить токен VK'"
+          :title="tokenOk === true ? 'Токен действителен' : 'Проверить токен VK Ads'"
           @click="checkTokenHealth"
         >
           {{ tokenChecking ? '…' : (tokenOk === true ? '✓ Токен OK' : '🔑 Проверить токен') }}
         </button>
         <span v-if="pollMsg" class="text-xs text-muted-foreground">{{ pollMsg }}</span>
+        <span v-if="syncMsg" class="text-xs" :class="syncMsg.startsWith('Ошибка') ? 'text-destructive' : 'text-muted-foreground'">{{ syncMsg }}</span>
       </div>
 
       <!-- Сегодня по часам: таблица -->
